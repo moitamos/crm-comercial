@@ -71,7 +71,7 @@ export async function updatePassword(formData: FormData) {
 
   const supabase = await createClient();
   const { data, error: claimsError } = await supabase.auth.getClaims();
-  if (claimsError || !data.claims?.sub) {
+  if (claimsError || !data?.claims?.sub) {
     redirect("/login?error=reset-session");
   }
 
