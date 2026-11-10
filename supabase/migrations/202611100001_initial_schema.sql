@@ -218,6 +218,35 @@ create table public.invoice_items (
 );
 create index invoice_items_invoice_id_idx on public.invoice_items (invoice_id);
 
+create or replace function public.validate_invoice_item_client()
+returns trigger
+language plpgsql
+set search_path = ''
+as $
+declare
+  invoice_client uuid;
+  service_client uuid;
+begin
+  if new.client_service_id is null then
+    return new;
+  end if;
+
+  select client_id into invoice_client
+  from public.invoices where id = new.invoice_id;
+  select client_id into service_client
+  from public.client_services where id = new.client_service_id;
+
+  if invoice_client is null or service_client is null or invoice_client <> service_client then
+    raise exception 'O serviço tem de pertencer ao mesmo cliente da fatura.';
+  end if;
+  return new;
+end;
+$;
+
+create trigger invoice_items_validate_client
+before insert or update on public.invoice_items
+for each row execute procedure public.validate_invoice_item_client();
+
 -- Security helpers. SECURITY DEFINER avoids recursive RLS evaluation while
 -- exposing only narrow boolean checks to authenticated policies.
 create or replace function public.is_active_user()
@@ -505,7 +534,7 @@ with check (
   public.is_admin()
   or (assigned_to = (select auth.uid()) and exists (
     select 1 from public.portfolio_members pm
-    where pm.portfolio_id = portfolio_id and pm.user_id = (select auth.uid())
+    where pm.portfolio_id = clients.portfolio_id and pm.user_id = (select auth.uid())
   ))
 );
 create policy clients_update_admin_or_self on public.clients
@@ -542,7 +571,7 @@ with check (
 create policy opportunities_update_admin_or_self on public.opportunities
 for update to authenticated
 using (public.is_admin() or assigned_to = (select auth.uid()))
-with check (public.is_admin() or assigned_to = (select auth.uid()));
+with check (public.is_admin() or (assigned_to = (select auth.uid()) and public.can_access_client(client_id)));
 create policy opportunities_delete_admin_only on public.opportunities
 for delete to authenticated
 using (public.is_admin());
@@ -603,7 +632,14 @@ with check (
 create policy tasks_update_assigned_or_admin on public.tasks
 for update to authenticated
 using (public.is_admin() or assigned_to = (select auth.uid()))
-with check (public.is_admin() or assigned_to = (select auth.uid()));
+with check (
+  public.is_admin()
+  or (
+    assigned_to = (select auth.uid())
+    and (client_id is null or public.can_access_client(client_id))
+    and (opportunity_id is null or public.can_access_opportunity(opportunity_id))
+  )
+);
 create policy tasks_delete_admin_only on public.tasks
 for delete to authenticated
 using (public.is_admin());
