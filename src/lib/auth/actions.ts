@@ -11,12 +11,10 @@ export async function signIn(formData: FormData) {
 
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
-
   if (!email || !password) redirect("/login?error=credentials");
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
-
   if (error) redirect("/login?error=credentials");
 
   revalidatePath("/", "layout");
@@ -43,17 +41,18 @@ export async function sendPasswordReset(formData: FormData) {
   const forwardedHost =
     requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
   const forwardedProtocol = requestHeaders.get("x-forwarded-proto") ?? "https";
-  const origin =
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    (forwardedHost
-      ? forwardedHost.startsWith("localhost")
-        ? \`http://\${forwardedHost}\`
-        : \`\${forwardedProtocol}://\${forwardedHost}\`
-      : "http://localhost:3000");
+
+  let origin = process.env.NEXT_PUBLIC_SITE_URL;
+  if (!origin && forwardedHost) {
+    origin = forwardedHost.startsWith("localhost")
+      ? "http://" + forwardedHost
+      : forwardedProtocol + "://" + forwardedHost;
+  }
+  origin = origin ?? "http://localhost:3000";
 
   const supabase = await createClient();
   await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: \`\${origin}/auth/callback?next=/update-password\`,
+    redirectTo: origin + "/auth/callback?next=/update-password",
   });
 
   // Same response whether or not the address belongs to an account.
@@ -72,8 +71,9 @@ export async function updatePassword(formData: FormData) {
 
   const supabase = await createClient();
   const { data, error: claimsError } = await supabase.auth.getClaims();
-
-  if (claimsError || !data.claims?.sub) redirect("/login?error=reset-session");
+  if (claimsError || !data.claims?.sub) {
+    redirect("/login?error=reset-session");
+  }
 
   const { error } = await supabase.auth.updateUser({ password });
   if (error) redirect("/update-password?error=update");
