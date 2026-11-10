@@ -377,6 +377,10 @@ language plpgsql
 set search_path = ''
 as $$
 begin
+  if current_setting('crm.internal_unassign', true) = 'on' then
+    return new;
+  end if;
+
   if not public.is_admin() and (
     new.portfolio_id is distinct from old.portfolio_id
     or new.assigned_to is distinct from old.assigned_to
@@ -399,10 +403,12 @@ set search_path = ''
 as $$
 begin
   if old.is_active = true and new.is_active = false then
+    perform set_config('crm.internal_unassign', 'on', true);
     update public.clients set assigned_to = null where assigned_to = new.id;
     update public.opportunities
       set assigned_to = null
       where assigned_to = new.id and stage not in ('venda', 'perdido');
+    perform set_config('crm.internal_unassign', 'off', true);
   end if;
   return new;
 end;
