@@ -3,14 +3,14 @@
 Aplicação CRM privada para gestão de clientes, serviços, oportunidades e resultados comerciais.
 
 ## Stack
-- Next.js App Router + React
+- Next.js 16 (App Router) + React 19
 - TypeScript
-- Tailwind CSS
+- Tailwind CSS 4
 - Supabase (PostgreSQL, Auth e Storage), a integrar
 - GitHub para controlo de versões
 
 ## Requisitos
-- Node.js 22 LTS
+- Node.js 26 LTS (mínimo definido no projeto: 26.13.0)
 - npm
 
 ## Desenvolvimento local
@@ -21,16 +21,23 @@ npm run dev
 ```
 Abrir http://localhost:3000.
 
+## Verificações
+```bash
+npm run lint
+npm run typecheck
+npm run build
+```
+
 ## Variáveis de ambiente
 Consulta `.env.example`. Nunca guardes credenciais reais no GitHub.
 
 ## Estrutura
 ```
-src/app/       # Rotas e layouts Next.js
-src/components/# Componentes reutilizáveis
-src/lib/       # Clientes e utilitários
-src/types/     # Tipos partilhados
-supabase/      # Migrações SQL
+src/app/        # Rotas e layouts Next.js
+src/components/ # Componentes reutilizáveis
+src/lib/        # Clientes e utilitários
+src/types/      # Tipos partilhados
+supabase/       # Migrações SQL
 ```
 
 ## Princípios funcionais
