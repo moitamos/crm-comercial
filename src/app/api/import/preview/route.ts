@@ -17,7 +17,7 @@ export async function POST(request:Request){
  const extension=path.extname(file.name).toLowerCase();
  if(![".csv",".xls",".xlsx"].includes(extension))return NextResponse.json({error:"Formato não suportado. Utiliza .csv, .xls ou .xlsx."},{status:415});
  let mapping:ImportMapping,headerRow:number,sheetName:string|undefined;
- try{mapping=JSON.parse(String(formData.get("mapping")??"")) as ImportMapping;headerRow=Number(formData.get("headerRow"));}
+ try{mapping=JSON.parse(String(formData.get("mapping")??"{}")) as ImportMapping;headerRow=Number(formData.get("headerRow"));sheetName=String(formData.get("sheetName")??"")||undefined;}
  catch{return NextResponse.json({error:"Não foi possível ler o mapa de colunas selecionado."},{status:400});}
  try{
   const preview=await parseWorkbook(new Uint8Array(await file.arrayBuffer()),mapping,headerRow,file.name,sheetName);
