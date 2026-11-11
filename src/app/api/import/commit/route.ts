@@ -426,21 +426,76 @@ export async function POST(request: Request) {
   }
 
   const serviceClientIds = Array.from(new Set(serviceGroups.map((item) => item.clientId)));
-  const serviceNumbers = Array.from(new Set(serviceGroups.map((item) => item.row.serviceNumber as string)));
-  const { data: existingServices, error: serviceCheckError } = serviceClientIds.length
-    ? await supabase.from("services")
-      .select("client_id, service_number, package_name, loyalty_end_date, loyalty_conclusion_date, service_type, source_data")
-      .in("client_id", serviceClientIds)
-      .in("service_number", serviceNumbers)
-    : { data: [], error: null };
+
+  // Avoid oversized PostgREST URLs when an import contains hundreds of clients.
+  // Fetch existing services in small client-id batches and paginate each batch.
+  const clientIdChunks: string[][] = [];
+  for (let index = 0; index < serviceClientIds.length; index += 80) {
+    clientIdChunks.push(serviceClientIds.slice(index, index + 80));
+  }
+
+  const existingServiceChunks: ExistingService[][] = Array.from(
+    { length: clientIdChunks.length },
+    () => [],
+  );
+  let serviceCheckError: { code?: string; message: string } | null = null;
+  let nextChunkIndex = 0;
+
+  const lookupWorkers = Array.from(
+    { length: Math.min(5, clientIdChunks.length) },
+    async () => {
+      while (true) {
+        const chunkIndex = nextChunkIndex++;
+        if (chunkIndex >= clientIdChunks.length || serviceCheckError) return;
+
+        let offset = 0;
+        while (true) {
+          const lookup = await supabase
+            .from("services")
+            .select("client_id, service_number, package_name, loyalty_end_date, loyalty_conclusion_date, service_type, source_data")
+            .in("client_id", clientIdChunks[chunkIndex])
+            .order("id", { ascending: true })
+            .range(offset, offset + 999);
+
+          if (lookup.error) {
+            serviceCheckError = lookup.error;
+            return;
+          }
+
+          const found = (lookup.data ?? []) as ExistingService[];
+          existingServiceChunks[chunkIndex].push(...found);
+          if (found.length < 1000) break;
+          offset += found.length;
+        }
+      }
+    },
+  );
+
+  await Promise.all(lookupWorkers);
+  const existingServices = existingServiceChunks.flat();
 
   if (serviceCheckError) {
-    await supabase.from("import_batches").update({ rows_rejected: rows.length }).eq("id", batchId);
-    return NextResponse.json({ error: "Não foi possível verificar os serviços já registados." }, { status: 500 });
+    const errorCode = serviceCheckError.code ?? null;
+    console.error("[CRM_IMPORT_SERVICE_CHECK]", {
+      batchId,
+      code: errorCode,
+      message: serviceCheckError.message,
+      clientCount: serviceClientIds.length,
+      serviceCount: serviceGroups.length,
+    });
+    await supabase.from("import_batches").update({
+      rows_rejected: validationRejections.length + unavailableClientRows,
+      summary: {
+        clients_created: clientsCreated,
+        error: "Falha ao verificar serviços já registados.",
+        error_code: errorCode,
+      },
+    }).eq("id", batchId);
+    return NextResponse.json({ error: "Não foi possível verificar os serviços já registados. Nenhum serviço foi importado; consulta a carteira antes de repetires a operação." }, { status: 500 });
   }
 
   const existingByKey = new Map<string, ExistingService>(
-    (existingServices ?? []).map((service) => [service.client_id + ":" + service.service_number, service as ExistingService]),
+    existingServices.map((service) => [service.client_id + ":" + service.service_number, service]),
   );
   const serviceRows = serviceGroups.map(({ clientId, row }) => {
     const existing = existingByKey.get(clientId + ":" + row.serviceNumber);
