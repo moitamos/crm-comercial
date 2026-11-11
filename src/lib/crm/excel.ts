@@ -454,12 +454,11 @@ function buildPiuRows(sheets: RawSheet[]): ImportRow[] {
         row.packageName = packageCode(serviceLabel || packageText);
       }
 
-        const rawEndDate = valueAt(source, endDateColumn);
+      const rawEndDate = valueAt(source, endDateColumn);
       const rawConclusionDate = valueAt(source, conclusionDateColumn);
       const parsedEndDate = dateIso(rawEndDate);
       row.loyaltyConclusionDate = dateIso(rawConclusionDate);
       row.loyaltyEndDate = parsedEndDate || (row.loyaltyConclusionDate ? addMonths(row.loyaltyConclusionDate, 24) : null);
-      if (!row.loyaltyEndDate && row.loyaltyConclusionDate) row.loyaltyEndDate = addMonths(row.loyaltyConclusionDate, 24);
       if (rawEndDate !== null && rawEndDate !== undefined && rawEndDate !== "" && !parsedEndDate) {
         row.errors.push("Data de fim de fidelização inválida.");
       }
