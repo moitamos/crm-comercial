@@ -116,7 +116,7 @@ export function ExcelImportForm({ portfolios }: { portfolios: Portfolio[] }) {
         body: JSON.stringify({ fileName: preview.fileName, portfolioId, rows: preview.rows }),
       });
       const payload = await response.json() as CommitResult & ErrorResult;
-      if (!response.ok) throw new Error([payload.error || "Não foi possível concluir a importação.", payload.details ? "Detalhe: " + payload.details : ""].filter(Boolean).join("\\n"));
+      if (!response.ok) throw new Error([payload.error || "Não foi possível concluir a importação.", payload.details ? "Detalhe: " + payload.details : ""].filter(Boolean).join("\n"));
       setResult(payload);
       setPreview(null);
       setAnalysis(null);
