@@ -356,20 +356,26 @@ function consolidateRows(input: ImportRow[]): { rows: ImportRow[]; duplicateCoun
   let duplicateCount = 0;
 
   for (const row of input) {
-    if (row.serviceNumber) {
-      const key = row.nif + ":" + row.serviceNumber.toLocaleLowerCase("pt-PT");
-      const existing = serviceRows.get(key);
-      if (existing) {
-        serviceRows.set(key, mergeDuplicateRows(existing, row));
-        duplicateCount++;
-      } else serviceRows.set(key, row);
-    } else {
+    if (!row.serviceNumber) {
       const existing = clientRows.get(row.nif);
       if (existing) {
         clientRows.set(row.nif, mergeDuplicateRows(existing, row));
         duplicateCount++;
       } else clientRows.set(row.nif, row);
+      continue;
     }
+
+    const key = row.nif + ":" + row.serviceNumber.toLocaleLowerCase("pt-PT");
+    const existing = serviceRows.get(key);
+    if (existing) {
+      serviceRows.set(key, mergeDuplicateRows(existing, row));
+      duplicateCount++;
+    } else serviceRows.set(key, row);
+  }
+
+  for (const [key, service] of serviceRows) {
+    const client = clientRows.get(service.nif);
+    if (client) serviceRows.set(key, mergeDuplicateRows(service, client));
   }
 
   const linkedNifs = new Set(Array.from(serviceRows.values()).map((row) => row.nif));
@@ -566,7 +572,7 @@ export async function parseWorkbook(
     const rawConclusionDate = value("loyaltyConclusionDate");
     const parsedEndDate = dateIso(rawEndDate);
     row.loyaltyConclusionDate = dateIso(rawConclusionDate);
-    row.loyaltyEndDate = parsedEndDate || (row.loyaltyConclusionDate ? addMonths(row.loyaltyConclusionDate, 24) : null);
+    row.loyaltyEndDate = row.loyaltyConclusionDate ? addMonths(row.loyaltyConclusionDate, 24) : parsedEndDate;
 
     if (!fullName && !nif && !serviceNumber && !row.nic && !row.ncc && !row.phone && !row.email && !row.address) continue;
     if (!fullName) row.errors.push("Nome em falta.");
@@ -591,17 +597,18 @@ export async function parseWorkbook(
 function validateAndConsolidate(input: ImportRow[]): { rows: ImportRow[]; warnings: string[] } {
   const namesByNif = new Map<string, string>();
   for (const row of input) {
-    if (!row.fullName) row.errors.push("Nome em falta.");
-    if (!/^\d{9}$/.test(row.nif)) row.errors.push("NIF inválido: deve conter 9 algarismos.");
-    if (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) row.errors.push("Email inválido.");
-    if (row.phone && !/^\+?[0-9]+$/.test(row.phone)) row.errors.push("Telefone inválido.");
-    if (row.serviceNumber && row.serviceNumber.length > 100) row.errors.push("N.º serviço demasiado longo.");
+    const addError = (message: string) => { if (!row.errors.includes(message)) row.errors.push(message); };
+    if (!row.fullName) addError("Nome em falta.");
+    if (!/^\d{9}$/.test(row.nif)) addError("NIF inválido: deve conter 9 algarismos.");
+    if (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) addError("Email inválido.");
+    if (row.phone && !/^\+?[0-9]+$/.test(row.phone)) addError("Telefone inválido.");
+    if (row.serviceNumber && row.serviceNumber.length > 100) addError("N.º serviço demasiado longo.");
 
     if (row.errors.length === 0) {
       const normalizedName = row.fullName.toLocaleLowerCase("pt-PT");
       const previousName = namesByNif.get(row.nif);
       if (previousName && previousName !== normalizedName) {
-        row.errors.push("O mesmo NIF aparece associado a nomes diferentes no ficheiro.");
+        addError("O mesmo NIF aparece associado a nomes diferentes no ficheiro.");
       } else namesByNif.set(row.nif, normalizedName);
     }
   }
