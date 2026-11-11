@@ -18,7 +18,7 @@ export async function POST(request:Request){
  if(![".csv",".xls",".xlsx"].includes(extension))return NextResponse.json({error:"Formato não suportado. Utiliza .csv, .xls ou .xlsx."},{status:415});
  try{
   const result=await analyzeWorkbook(new Uint8Array(await file.arrayBuffer()),file.name);
-  if(!result.headers.length)return NextResponse.json({error:"Não encontrei cabeçalhos nesta folha."},{status:422});
+  if(result.mode==="standard"&&!result.headers.length)return NextResponse.json({error:"Não encontrei cabeçalhos nesta folha."},{status:422});
   return NextResponse.json({fileName:file.name.slice(0,180),...result});
  }catch(error){return NextResponse.json({error:error instanceof Error?error.message:"Não foi possível analisar este ficheiro."},{status:422});}
 }
