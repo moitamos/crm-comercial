@@ -32,6 +32,38 @@ function isIsoDate(value: string | null): boolean {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
+function validateRows(rows: ImportRow[]) {
+  const accepted: ImportRow[] = [];
+  const rejected = new Set<number>();
+  const namesByNif = new Map<string, string>();
+  const serviceKeys = new Set<string>();
+
+  for (const row of rows) {
+    if (row.errors.length > 0 || !row.fullName || !/^\d{9}$/.test(row.nif) || !row.serviceNumber || !isIsoDate(row.loyaltyEndDate)) {
+      rejected.add(row.rowNumber);
+      continue;
+    }
+
+    const normalizedName = row.fullName.toLocaleLowerCase("pt-PT");
+    const previousName = namesByNif.get(row.nif);
+    if (previousName && previousName !== normalizedName) {
+      rejected.add(row.rowNumber);
+      continue;
+    }
+    namesByNif.set(row.nif, normalizedName);
+
+    const serviceKey = row.nif + ":" + row.serviceNumber.toLocaleLowerCase("pt-PT");
+    if (serviceKeys.has(serviceKey)) {
+      rejected.add(row.rowNumber);
+      continue;
+    }
+    serviceKeys.add(serviceKey);
+    accepted.push(row);
+  }
+
+  return { accepted, rejectedCount: rejected.size };
+}
+
 export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: claims, error: claimsError } = await supabase.auth.getClaims();
@@ -50,16 +82,10 @@ export async function POST(request: Request) {
 
   const portfolioId = String(body.portfolioId ?? "");
   const rows = normalizeRows(body.rows);
-  const fileName = String(body.fileName ?? "importacao.xlsx").slice(0, 180);
+  const fileName = String(body.fileName ?? "importacao.xlsx").replace(/[\\/\u0000-\u001f]/g, "_").slice(0, 180);
   if (!portfolioId || rows.length === 0) return NextResponse.json({ error: "Não existem linhas válidas para importar." }, { status: 400 });
 
-  const validRows = rows.filter((row) =>
-    row.errors.length === 0 &&
-    row.fullName.length > 0 &&
-    /^\d{9}$/.test(row.nif) &&
-    row.serviceNumber.length > 0 &&
-    isIsoDate(row.loyaltyEndDate)
-  );
+  const { accepted: validRows, rejectedCount: invalidRows } = validateRows(rows);
   if (validRows.length === 0) return NextResponse.json({ error: "Todas as linhas têm erros. Corrige o Excel e volta a pré-visualizar." }, { status: 422 });
 
   const { data: membership } = await supabase
@@ -82,7 +108,7 @@ export async function POST(request: Request) {
     source: "excel",
     rows_read: rows.length,
     rows_imported: 0,
-    rows_rejected: 0,
+    rows_rejected: invalidRows,
     summary: {},
     created_by: userId,
   }).select("id").single();
@@ -139,10 +165,15 @@ export async function POST(request: Request) {
     clientsCreated = inserted.data?.length ?? 0;
     for (const item of inserted.data ?? []) clientIds.set(item.nif, item.id);
 
-    const { data: resolvedClients } = await supabase
+    const { data: resolvedClients, error: resolveError } = await supabase
       .from("clients")
       .select("id, nif, portfolio_id")
       .in("nif", nifList);
+
+    if (resolveError) {
+      await supabase.from("import_batches").update({ rows_rejected: rows.length }).eq("id", batchId);
+      return NextResponse.json({ error: "Não foi possível confirmar os clientes após a criação. Consulta a carteira antes de repetires a importação." }, { status: 500 });
+    }
 
     for (const client of resolvedClients ?? []) {
       if (client.portfolio_id === portfolioId) clientIds.set(client.nif, client.id);
@@ -150,7 +181,7 @@ export async function POST(request: Request) {
   }
 
   const rejectedNifs = nifList.filter((nif) => !clientIds.has(nif));
-  const rejectedRows = rejectedNifs.reduce((total, nif) => total + (groups.get(nif)?.length ?? 0), 0);
+  const unavailableClientRows = rejectedNifs.reduce((total, nif) => total + (groups.get(nif)?.length ?? 0), 0);
 
   const serviceRows: Array<{
     client_id: string;
@@ -160,6 +191,7 @@ export async function POST(request: Request) {
     source: "excel";
     import_batch_id: string;
     is_active: boolean;
+    updated_at: string;
   }> = [];
 
   for (const [nif, items] of groups.entries()) {
@@ -174,6 +206,7 @@ export async function POST(request: Request) {
         source: "excel",
         import_batch_id: batchId,
         is_active: true,
+        updated_at: new Date().toISOString(),
       });
     }
   }
@@ -190,50 +223,56 @@ export async function POST(request: Request) {
   }
 
   const existingServiceKeys = new Set((existingServices ?? []).map((item) => item.client_id + ":" + item.service_number));
-  const uniqueServices = serviceRows.filter((row) => !existingServiceKeys.has(row.client_id + ":" + row.service_number));
-  const duplicateServices = serviceRows.length - uniqueServices.length;
+  const servicesUpdatedBeforeImport = serviceRows.filter((row) => existingServiceKeys.has(row.client_id + ":" + row.service_number)).length;
 
   let servicesCreated = 0;
-  if (uniqueServices.length) {
-    const insertedServices = await supabase
+  let servicesUpdated = 0;
+  if (serviceRows.length) {
+    const upsertedServices = await supabase
       .from("services")
-      .upsert(uniqueServices, {
+      .upsert(serviceRows, {
         onConflict: "client_id,service_number",
-        ignoreDuplicates: true,
+        ignoreDuplicates: false,
       })
-      .select("id");
+      .select("id, client_id, service_number");
 
-    if (insertedServices.error) {
+    if (upsertedServices.error) {
       await supabase.from("import_batches").update({
-        rows_rejected: rejectedRows,
+        rows_rejected: rows.length,
         summary: { clients_created: clientsCreated, error: "Falha ao gravar serviços." },
       }).eq("id", batchId);
       return NextResponse.json({ error: "Os clientes foram criados, mas ocorreu um erro ao gravar os serviços. A importação ficou registada para análise." }, { status: 500 });
     }
-    servicesCreated = insertedServices.data?.length ?? 0;
+
+    servicesUpdated = Math.min(servicesUpdatedBeforeImport, upsertedServices.data?.length ?? 0);
+    servicesCreated = Math.max(0, (upsertedServices.data?.length ?? 0) - servicesUpdated);
   }
 
-  const importedRows = servicesCreated + duplicateServices;
+  const importedRows = servicesCreated + servicesUpdated;
   const rejectedTotal = rows.length - importedRows;
+  const clientsReused = Math.max(0, groups.size - clientsCreated - rejectedNifs.length);
+  const summary = {
+    clients_created: clientsCreated,
+    clients_reused: clientsReused,
+    services_created: servicesCreated,
+    services_updated: servicesUpdated,
+    clients_not_available_in_selected_portfolio: rejectedNifs.length,
+    invalid_rows: invalidRows,
+  };
+
   await supabase.from("import_batches").update({
     rows_imported: importedRows,
     rows_rejected: rejectedTotal,
-    summary: {
-      clients_created: clientsCreated,
-      clients_reused: Math.max(0, groups.size - clientsCreated - rejectedNifs.length),
-      services_created: servicesCreated,
-      duplicate_services_skipped: duplicateServices,
-      clients_not_available_in_selected_portfolio: rejectedNifs.length,
-    },
+    summary,
   }).eq("id", batchId);
 
   return NextResponse.json({
     success: true,
     batchId,
     clientsCreated,
-    clientsReused: Math.max(0, groups.size - clientsCreated - rejectedNifs.length),
+    clientsReused,
     servicesCreated,
-    duplicateServices,
+    servicesUpdated,
     rejectedRows: rejectedTotal,
   });
 }
