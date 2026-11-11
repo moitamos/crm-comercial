@@ -85,4 +85,4 @@ Os dados completos de cada linha são preservados em JSON associado ao cliente o
 - No final da importação, o CRM atualiza imediatamente as oportunidades elegíveis do comercial autenticado; as restantes são geradas pela rotina diária.
 
 ### Regra de cliente ativo na dashboard
-Um cliente é considerado ativo de carteira quando tem pelo menos uma venda concluída ou um serviço com `Data conclusão` importada/registada. As contagens de serviços são apenas de serviços marcados como ativos.
+Um cliente é considerado ativo de carteira quando tem pelo menos uma venda concluída ou um serviço ativo com `Data conclusão` importada/registada. As contagens de serviços são apenas de serviços marcados como ativos.
