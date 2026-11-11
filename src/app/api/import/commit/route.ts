@@ -438,7 +438,7 @@ export async function POST(request: Request) {
     { length: clientIdChunks.length },
     () => [],
   );
-  let serviceCheckError: { code?: string; message: string } | null = null;
+  const serviceCheckErrors: Array<{ code: string; message: string }> = [];
   let nextChunkIndex = 0;
 
   const lookupWorkers = Array.from(
@@ -446,7 +446,7 @@ export async function POST(request: Request) {
     async () => {
       while (true) {
         const chunkIndex = nextChunkIndex++;
-        if (chunkIndex >= clientIdChunks.length || serviceCheckError) return;
+        if (chunkIndex >= clientIdChunks.length || serviceCheckErrors.length > 0) return;
 
         let offset = 0;
         while (true) {
@@ -458,7 +458,7 @@ export async function POST(request: Request) {
             .range(offset, offset + 999);
 
           if (lookup.error) {
-            serviceCheckError = lookup.error;
+            serviceCheckErrors.push({ code: lookup.error.code, message: lookup.error.message });
             return;
           }
 
@@ -473,9 +473,10 @@ export async function POST(request: Request) {
 
   await Promise.all(lookupWorkers);
   const existingServices = existingServiceChunks.flat();
+  const serviceCheckError = serviceCheckErrors[0] ?? null;
 
   if (serviceCheckError) {
-    const errorCode = serviceCheckError.code ?? null;
+    const errorCode = serviceCheckError.code;
     console.error("[CRM_IMPORT_SERVICE_CHECK]", {
       batchId,
       code: errorCode,
