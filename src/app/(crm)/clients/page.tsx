@@ -297,7 +297,7 @@ export default async function ClientsPage({ searchParams }: Props) {
                         <p className="mt-0.5 text-xs text-slate-400">Criado em {new Date(client.created_at).toLocaleDateString("pt-PT")}</p>
                       </td>
                       <td className="px-4 py-2.5 text-sm text-slate-700">{client.nif}</td>
-                      <td className="px-5 py-4">
+                      <td className="px-4 py-2.5">
                         {packageLabels.length ? (
                           <div className="flex max-w-[340px] flex-wrap gap-1">
                             {packageLabels.map((label) => <span key={label} className="rounded bg-blue-50 px-1.5 py-0.5 text-[11px] font-medium text-blue-800">{label}</span>)}
