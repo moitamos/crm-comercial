@@ -27,13 +27,13 @@ function MetricCard({ title, value, note, icon: Icon }: {
   title: string; value: number; note: string; icon: typeof Users;
 }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-medium text-slate-500">{title}</p>
-        <span className="rounded-xl bg-blue-50 p-2 text-blue-700"><Icon size={19} /></span>
+    <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-medium text-slate-500">{title}</p>
+        <span className="rounded-lg bg-blue-50 p-1.5 text-blue-700"><Icon size={16} /></span>
       </div>
-      <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-900">{value.toLocaleString("pt-PT")}</p>
-      <p className="mt-2 text-xs text-slate-500">{note}</p>
+      <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{value.toLocaleString("pt-PT")}</p>
+      <p className="mt-1 text-[11px] leading-4 text-slate-500">{note}</p>
     </section>
   );
 }
@@ -79,7 +79,7 @@ export default async function DashboardPage() {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Carteira e atividade comercial</h2>
           <span className="text-xs text-slate-400">Atualizado com os dados atuais do CRM</span>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard title="Clientes na carteira" value={clientCount} note="Total de clientes visíveis na tua carteira" icon={Users} />
           <MetricCard title="Clientes ativos" value={activeClientCount} note="Com venda concluída ou Data conclusão registada" icon={Layers} />
           <MetricCard title="Negócios no funil" value={dealCount} note="Oportunidades ainda não ganhas nem perdidas" icon={BriefcaseBusiness} />
