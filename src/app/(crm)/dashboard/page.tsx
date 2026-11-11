@@ -3,9 +3,9 @@ import {
   Activity,
   ArrowRight,
   BriefcaseBusiness,
-  CalendarClock,
+  CalendarDays,
   CircleDollarSign,
-  Layers3,
+  Layers,
   Smartphone,
   Users,
   Wifi,
@@ -81,9 +81,9 @@ export default async function DashboardPage() {
         </div>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard title="Clientes na carteira" value={clientCount} note="Total de clientes visíveis na tua carteira" icon={Users} />
-          <MetricCard title="Clientes ativos" value={activeClientCount} note="Com venda concluída ou Data conclusão registada" icon={Layers3} />
+          <MetricCard title="Clientes ativos" value={activeClientCount} note="Com venda concluída ou Data conclusão registada" icon={Layers} />
           <MetricCard title="Negócios no funil" value={dealCount} note="Oportunidades ainda não ganhas nem perdidas" icon={BriefcaseBusiness} />
-          <MetricCard title="Renovações elegíveis" value={dueDeals} note="Negócios abertos cujo mês de elegibilidade já chegou" icon={CalendarClock} />
+          <MetricCard title="Renovações elegíveis" value={dueDeals} note="Negócios abertos cujo mês de elegibilidade já chegou" icon={CalendarDays} />
           <MetricCard title="Vendas este mês" value={salesThisMonth} note="Vendas concluídas no mês atual" icon={CircleDollarSign} />
           <MetricCard title="Serviços MEO" value={meoCount} note="Serviços ativos da folha Refid MEO" icon={Wifi} />
           <MetricCard title="Cartões M Móvel" value={mobileCount} note="Cartões ativos da folha Cartoes Moveis" icon={Smartphone} />
@@ -113,7 +113,7 @@ export default async function DashboardPage() {
             <p className="mt-1 text-sm leading-6 text-slate-500">Importa as folhas de clientes, MEO, cartões móveis, GCP e administradores.</p>
           </Link>
           <div className="rounded-xl border border-dashed border-slate-300 p-5">
-            <CalendarClock size={20} className="text-slate-400" />
+            <CalendarDays size={20} className="text-slate-400" />
             <h3 className="mt-3 font-semibold text-slate-700">Objetivos comerciais</h3>
             <p className="mt-1 text-sm leading-6 text-slate-500">Próxima fase: objetivos mensais, pontos e evolução de resultados.</p>
           </div>
