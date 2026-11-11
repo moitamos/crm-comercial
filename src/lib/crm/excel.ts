@@ -339,8 +339,12 @@ function emptyRow(rowNumber: number, fullName: string, nif: string): ImportRow {
 }
 
 function mergeDuplicateRows(existing: ImportRow, incoming: ImportRow): ImportRow {
-  const endDate = [existing.loyaltyEndDate, incoming.loyaltyEndDate].filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
-  const conclusionDate = [existing.loyaltyConclusionDate, incoming.loyaltyConclusionDate].filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
+  const conclusionDate = [existing.loyaltyConclusionDate, incoming.loyaltyConclusionDate]
+    .filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
+  const endDate = conclusionDate
+    ? addMonths(conclusionDate, 24)
+    : [existing.loyaltyEndDate, incoming.loyaltyEndDate]
+      .filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
   return {
     ...existing,
     fullName: existing.fullName || incoming.fullName,
