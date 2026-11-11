@@ -35,7 +35,7 @@ export function ClientListFilters({ perPage, selectedPackage, packages }: Props)
           {packages.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
       </label>
-      <label className="flex items-center gap-2 text-xs font-medium text-slate-500">
+      <label className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
         Por página
         <select
           aria-label="Clientes por página"
