@@ -458,7 +458,7 @@ function buildPiuRows(sheets: RawSheet[]): ImportRow[] {
       const rawConclusionDate = valueAt(source, conclusionDateColumn);
       const parsedEndDate = dateIso(rawEndDate);
       row.loyaltyConclusionDate = dateIso(rawConclusionDate);
-      row.loyaltyEndDate = parsedEndDate || (row.loyaltyConclusionDate ? addMonths(row.loyaltyConclusionDate, 24) : null);
+      row.loyaltyEndDate = row.loyaltyConclusionDate ? addMonths(row.loyaltyConclusionDate, 24) : parsedEndDate;
       if (rawEndDate !== null && rawEndDate !== undefined && rawEndDate !== "" && !parsedEndDate) {
         row.errors.push("Data de fim de fidelização inválida.");
       }
