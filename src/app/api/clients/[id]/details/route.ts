@@ -37,7 +37,7 @@ export async function GET(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Não foi possível encontrar este cliente na tua carteira." }, { status: 404 });
   }
 
-  const [servicesResult, detailsResult, administratorsResult] = await Promise.all([
+  const [servicesResult, administratorsResult] = await Promise.all([
     supabase
       .from("services")
       .select("id, service_number, service_type, package_name, current_monthly_fee, loyalty_end_date, loyalty_conclusion_date, is_active, source_data")
@@ -45,18 +45,13 @@ export async function GET(_request: Request, context: RouteContext) {
       .order("service_type", { ascending: true })
       .order("service_number", { ascending: true }),
     supabase
-      .from("client_import_details")
-      .select("source_system, source_data, updated_at")
-      .eq("client_id", id)
-      .order("updated_at", { ascending: false }),
-    supabase
       .from("client_administrators")
       .select("id, full_name, phone_numbers, email, marketing_permission, observations, source_data")
       .eq("client_id", id)
       .order("full_name", { ascending: true }),
   ]);
 
-  const queryError = servicesResult.error || detailsResult.error || administratorsResult.error;
+  const queryError = servicesResult.error || administratorsResult.error;
   if (queryError) {
     console.error("[CRM_CLIENT_DETAILS]", { clientId: id, message: queryError.message });
     return NextResponse.json({ error: "Não foi possível carregar todos os detalhes do cliente." }, { status: 500 });
@@ -65,7 +60,6 @@ export async function GET(_request: Request, context: RouteContext) {
   return NextResponse.json({
     client,
     services: servicesResult.data ?? [],
-    importDetails: detailsResult.data ?? [],
     administrators: administratorsResult.data ?? [],
   });
 }
