@@ -39,7 +39,7 @@ export function DealUpdateForm({ deal }: {
       setOpen(false);
       router.refresh();
     }
-  }, [state.success, router]);
+  }, [state, router]);
 
   useEffect(() => {
     if (!open) return;
