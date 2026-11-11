@@ -39,7 +39,7 @@ type ManualServiceInput = {
 
 function validIsoDate(value: string) {
   if (!value) return true;
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(value + "T12:00:00Z");
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
@@ -58,18 +58,18 @@ export async function createClientAction(_previous: FormActionState, formData: F
   if (!context.userId) return { error: context.error ?? "Sessão inválida." };
 
   const fullName = String(formData.get("full_name") ?? "").trim();
-  const nif = String(formData.get("nif") ?? "").replace(/\\D/g, "");
+  const nif = String(formData.get("nif") ?? "").replace(/\D/g, "");
   const nic = String(formData.get("nic") ?? "").trim() || null;
   const ncc = String(formData.get("ncc") ?? "").trim() || null;
   const rawPhone = String(formData.get("phone") ?? "").trim();
-  const phone = rawPhone ? rawPhone.replace(/[\\s().-]/g, "") : null;
+  const phone = rawPhone ? rawPhone.replace(/[\s().-]/g, "") : null;
   const email = String(formData.get("email") ?? "").trim().toLowerCase() || null;
   const address = String(formData.get("address") ?? "").trim() || null;
   const notes = String(formData.get("notes") ?? "").trim() || null;
   const portfolioId = String(formData.get("portfolio_id") ?? "").trim();
 
   if (!fullName || fullName.length > 200) return { error: "Indica o nome do cliente (máximo 200 caracteres)." };
-  if (!/^\\d{9}$/.test(nif)) return { error: "O NIF tem de conter exatamente 9 algarismos." };
+  if (!/^\d{9}$/.test(nif)) return { error: "O NIF tem de conter exatamente 9 algarismos." };
   if (!portfolioId) return { error: "Seleciona uma carteira." };
   if (phone && !isValidPhone(phone)) return { error: "O telefone deve conter apenas algarismos e, opcionalmente, o prefixo +." };
   if (!isValidEmail(email)) return { error: "Indica um email válido." };
@@ -110,7 +110,7 @@ export async function createClientAction(_previous: FormActionState, formData: F
     }
     seenNumbers.add(normalizedNumber);
     if (packageName && packageName.length > 120) return { error: "O tarifário/oferta não pode ultrapassar 120 caracteres." };
-    if (feeRaw && (!/^\\d+(?:[.,]\\d{1,2})?$/.test(feeRaw) || Number(feeRaw.replace(",", ".")) < 0)) {
+    if (feeRaw && (!/^\d+(?:[.,]\d{1,2})?$/.test(feeRaw) || Number(feeRaw.replace(",", ".")) < 0)) {
       return { error: "Indica uma mensalidade válida e não negativa para o serviço " + serviceNumber + "." };
     }
     if (!validIsoDate(conclusionDate) || !validIsoDate(endDate)) {
