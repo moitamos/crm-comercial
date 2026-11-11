@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { BriefcaseBusiness, CalendarClock, Clock3, Search, TrendingUp, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { DealUpdateForm } from "@/components/crm/deal-update-form";
 import { getServicePackageLabel } from "@/lib/crm/packages";
+import { PipelineBoard, type PipelineDeal } from "@/components/crm/pipeline-board";
 
-type Props = { searchParams: Promise<{ q?: string; stage?: string; type?: string; page?: string }> };
+type Props = { searchParams: Promise<{ q?: string; type?: string }> };
 type DealRow = {
   id: string;
   client_id: string;
@@ -21,41 +21,32 @@ type DealRow = {
 type ClientRow = { id: string; full_name: string; nif: string };
 type DealServiceRow = { id: string; deal_id: string; service_id: string; decision: string | null; future_package: string | null };
 type ServiceRow = { id: string; service_number: string; service_type: string; package_name: string | null };
-type DealView = DealRow & { client: ClientRow | null; services: ServiceRow[] };
 
 const STAGES = [
-  { value: "to_contact", label: "Por contactar", tone: "bg-slate-100 text-slate-700" },
-  { value: "negotiation", label: "Em negociação", tone: "bg-violet-100 text-violet-800" },
-  { value: "scheduled", label: "Agendado", tone: "bg-amber-100 text-amber-800" },
-  { value: "future_contact", label: "Contactar futuramente", tone: "bg-sky-100 text-sky-800" },
-  { value: "sale", label: "Venda", tone: "bg-emerald-100 text-emerald-800" },
-  { value: "lost", label: "Perdido", tone: "bg-rose-100 text-rose-800" },
+  { value: "to_contact", label: "Por contactar" },
+  { value: "negotiation", label: "Em negociação" },
+  { value: "scheduled", label: "Agendado" },
+  { value: "future_contact", label: "Contactar futuramente" },
+  { value: "sale", label: "Venda" },
+  { value: "lost", label: "Perdido" },
 ] as const;
 const DEAL_TYPES = [
   { value: "portfolio_renewal", label: "Renovação de carteira" },
   { value: "new_sale", label: "Nova venda" },
   { value: "package_change", label: "Alteração de pacote" },
 ];
-const PAGE_SIZE = 30;
 
 async function loadChunks<T>(
   ids: string[],
   loader: (batch: string[]) => Promise<{ data: T[] | null; error: { message: string } | null }>
 ) {
   const batches: string[][] = [];
-  for (let offset = 0; offset < ids.length; offset += 80) {
-    batches.push(ids.slice(offset, offset + 80));
-  }
+  for (let offset = 0; offset < ids.length; offset += 80) batches.push(ids.slice(offset, offset + 80));
   const results = await Promise.all(batches.map(loader));
   return {
     data: results.flatMap((result) => result.data ?? []),
     error: results.find((result) => result.error)?.error ?? null,
   };
-}
-
-function positiveInteger(value: string | undefined, fallback: number) {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function normalized(value: string) {
@@ -67,23 +58,6 @@ function dateLabel(value: string | null) {
   const normalizedValue = value.length === 10 ? value + "T12:00:00Z" : value;
   const date = new Date(normalizedValue);
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("pt-PT", { timeZone: "Europe/Lisbon" });
-}
-
-function stageInfo(value: string) {
-  return STAGES.find((stage) => stage.value === value) ?? STAGES[0];
-}
-
-function dealTypeLabel(value: string) {
-  return DEAL_TYPES.find((item) => item.value === value)?.label ?? value;
-}
-
-function queryHref(params: { q: string; type: string; stage: string; page: number }) {
-  const search = new URLSearchParams();
-  if (params.q) search.set("q", params.q);
-  if (params.type) search.set("type", params.type);
-  if (params.stage) search.set("stage", params.stage);
-  search.set("page", String(params.page));
-  return "/pipeline?" + search.toString();
 }
 
 function Metric({ label, value, icon: Icon }: { label: string; value: number; icon: typeof Users }) {
@@ -99,9 +73,7 @@ function Metric({ label, value, icon: Icon }: { label: string; value: number; ic
 export default async function PipelinePage({ searchParams }: Props) {
   const params = await searchParams;
   const query = (params.q ?? "").trim().slice(0, 80);
-  const selectedStage = STAGES.some((item) => item.value === params.stage) ? params.stage ?? "" : "";
   const selectedType = DEAL_TYPES.some((item) => item.value === params.type) ? params.type ?? "" : "";
-  let currentPage = positiveInteger(params.page, 1);
 
   const supabase = await createClient();
   const dealsResult = await supabase.from("deals")
@@ -139,7 +111,7 @@ export default async function PipelinePage({ searchParams }: Props) {
     servicesByDeal.set(link.deal_id, current);
   }
 
-  const allDealViews: DealView[] = allDeals.map((deal) => ({
+  const allDealViews: PipelineDeal[] = allDeals.map((deal) => ({
     ...deal,
     client: clients.get(deal.client_id) ?? null,
     services: servicesByDeal.get(deal.id) ?? [],
@@ -156,7 +128,6 @@ export default async function PipelinePage({ searchParams }: Props) {
 
   const searchNeedle = normalized(query);
   const filtered = allDealViews.filter((deal) => {
-    if (selectedStage && deal.stage !== selectedStage) return false;
     if (selectedType && deal.deal_type !== selectedType) return false;
     if (!searchNeedle) return true;
     const searchable = [
@@ -168,26 +139,23 @@ export default async function PipelinePage({ searchParams }: Props) {
     return normalized(searchable).includes(searchNeedle);
   });
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  if (currentPage > totalPages) currentPage = totalPages;
-  const pageDeals = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   const queryError = dealsResult.error || clientsResult.error || dealServicesResult.error || servicesResult.error;
   const truncated = (dealsResult.count ?? allDeals.length) > allDeals.length;
 
   return (
-    <main className="mx-auto max-w-7xl space-y-5 px-4 py-7 sm:px-7">
+    <main className="mx-auto max-w-none space-y-5 px-4 py-6 sm:px-6 xl:px-7">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
         <div>
           <p className="text-sm text-slate-500">Gestão de oportunidades comerciais</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">Funil de vendas</h1>
-          <p className="mt-1 text-sm text-slate-500">Acompanha cada negócio, regista contactos e atualiza a fase da oportunidade.</p>
+          <p className="mt-1 text-sm text-slate-500">Organiza os negócios por fase e acompanha a evolução de cada oportunidade.</p>
         </div>
         <Link href="/clients" className="inline-flex items-center gap-2 self-start rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:self-auto">
           <Users size={16} /> Consultar clientes
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
         <Metric label="Negócios em aberto" value={openCount} icon={BriefcaseBusiness} />
         <Metric label="Com contacto agendado" value={followUpCount} icon={CalendarClock} />
         <Metric label="Contactos em atraso" value={overdueCount} icon={Clock3} />
@@ -205,24 +173,7 @@ export default async function PipelinePage({ searchParams }: Props) {
         </p>
       )}
 
-      <section className="space-y-2">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Fases do funil</h2>
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          <Link href={queryHref({ q: query, type: selectedType, stage: "", page: 1 })}
-            className={"shrink-0 rounded-xl border px-3 py-2 text-sm font-semibold " + (!selectedStage ? "border-blue-200 bg-blue-50 text-blue-800" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}>
-            Todas <span className="ml-1 tabular-nums">{allDeals.length.toLocaleString("pt-PT")}</span>
-          </Link>
-          {STAGES.map((stage) => (
-            <Link key={stage.value} href={queryHref({ q: query, type: selectedType, stage: stage.value, page: 1 })}
-              className={"shrink-0 rounded-xl border px-3 py-2 text-sm font-semibold " + (selectedStage === stage.value ? "border-blue-200 bg-blue-50 text-blue-800" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}>
-              {stage.label} <span className="ml-1 tabular-nums">{(stageCounts.get(stage.value) ?? 0).toLocaleString("pt-PT")}</span>
-            </Link>
-          ))}
-        </div>
-      </section>
-
       <form method="get" className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-2 shadow-sm sm:flex-row">
-        <input type="hidden" name="stage" value={selectedStage} />
         <div className="flex min-w-0 flex-1 items-center gap-2 px-2">
           <Search size={16} className="shrink-0 text-slate-400" />
           <input name="q" defaultValue={query} placeholder="Pesquisar por cliente, NIF, serviço ou pacote"
@@ -235,96 +186,21 @@ export default async function PipelinePage({ searchParams }: Props) {
         </select>
         <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">Pesquisar</button>
         {(query || selectedType) && (
-          <Link href={queryHref({ q: "", type: "", stage: selectedStage, page: 1 })}
-            className="rounded-lg px-3 py-2 text-center text-sm font-medium text-slate-500 hover:bg-slate-50">Limpar</Link>
+          <Link href="/pipeline" className="rounded-lg px-3 py-2 text-center text-sm font-medium text-slate-500 hover:bg-slate-50">Limpar</Link>
         )}
       </form>
 
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-slate-500">
           {filtered.length.toLocaleString("pt-PT")} negócios encontrados
-          {selectedStage ? " · " + stageInfo(selectedStage).label : ""}
+          {(query || selectedType) ? " · Filtros aplicados" : " · Todas as fases"}
         </p>
-        <p className="text-xs text-slate-400">Página {currentPage} de {totalPages}</p>
+        <p className="hidden items-center gap-1 text-xs text-slate-400 sm:flex">
+          <BriefcaseBusiness size={13} /> {STAGES.length} fases
+        </p>
       </div>
 
-      {pageDeals.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
-          <BriefcaseBusiness size={26} className="mx-auto text-slate-300" />
-          <h2 className="mt-3 font-semibold text-slate-800">Não foram encontrados negócios</h2>
-          <p className="mt-1 text-sm text-slate-500">Altera a pesquisa ou seleciona outra fase do funil.</p>
-        </div>
-      ) : (
-        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="divide-y divide-slate-100">
-            {pageDeals.map((deal) => {
-              const status = stageInfo(deal.stage);
-              const nextDate = deal.next_contact_at ? new Date(deal.next_contact_at).getTime() : null;
-              const overdue = Boolean(nextDate && nextDate < now && !["sale", "lost"].includes(deal.stage));
-              const services = deal.services;
-              return (
-                <article key={deal.id} className="flex flex-col gap-3 p-4 transition hover:bg-slate-50/60 sm:flex-row sm:items-start sm:justify-between sm:p-5">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-semibold text-slate-900">{deal.client?.full_name ?? "Cliente sem nome"}</h3>
-                      <span className={"rounded-full px-2.5 py-1 text-[11px] font-semibold " + status.tone}>{status.label}</span>
-                    </div>
-                    <p className="mt-1 text-xs text-slate-500">
-                      NIF {deal.client?.nif ?? "—"} · {dealTypeLabel(deal.deal_type)}
-                      {deal.eligibility_month ? " · Elegível desde " + dateLabel(deal.eligibility_month) : ""}
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {services.slice(0, 6).map((service) => (
-                        <span key={service.id} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600">
-                          {getServicePackageLabel(service) || service.package_name || service.service_type} · {service.service_number}
-                        </span>
-                      ))}
-                      {services.length > 6 && <span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] text-slate-500">+{services.length - 6} serviços</span>}
-                      {services.length === 0 && <span className="text-xs text-slate-400">Sem serviços associados</span>}
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-                      <span>Último contacto: {dateLabel(deal.last_contact_at)}</span>
-                      {deal.next_contact_at && (
-                        <span className={overdue ? "font-semibold text-rose-700" : ""}>
-                          Próximo contacto: {dateLabel(deal.next_contact_at)}{overdue ? " · Em atraso" : ""}
-                        </span>
-                      )}
-                      <span>Criado em {dateLabel(deal.created_at)}</span>
-                    </div>
-                    {deal.lost_reason && <p className="mt-2 text-xs text-rose-700">Motivo da perda: {deal.lost_reason}</p>}
-                    {deal.notes && <p className="mt-2 line-clamp-2 whitespace-pre-wrap text-xs leading-5 text-slate-600">{deal.notes}</p>}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2 sm:flex-col sm:items-end">
-                    <Link href={"/clients/" + deal.client_id} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50">Ficha do cliente</Link>
-                    <DealUpdateForm deal={{
-                      id: deal.id,
-                      stage: deal.stage,
-                      next_contact_at: deal.next_contact_at,
-                      lost_reason: deal.lost_reason,
-                      notes: deal.notes,
-                    }} />
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-          <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-3">
-            <p className="text-xs text-slate-500">
-              A mostrar {((currentPage - 1) * PAGE_SIZE + 1).toLocaleString("pt-PT")}–{Math.min(currentPage * PAGE_SIZE, filtered.length).toLocaleString("pt-PT")} de {filtered.length.toLocaleString("pt-PT")}
-            </p>
-            <div className="flex items-center gap-2">
-              {currentPage > 1 ? (
-                <Link href={queryHref({ q: query, type: selectedType, stage: selectedStage, page: currentPage - 1 })}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Anterior</Link>
-              ) : <span className="rounded-lg border border-slate-100 px-3 py-1.5 text-xs text-slate-300">Anterior</span>}
-              {currentPage < totalPages ? (
-                <Link href={queryHref({ q: query, type: selectedType, stage: selectedStage, page: currentPage + 1 })}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Seguinte</Link>
-              ) : <span className="rounded-lg border border-slate-100 px-3 py-1.5 text-xs text-slate-300">Seguinte</span>}
-            </div>
-          </div>
-        </section>
-      )}
+      <PipelineBoard deals={filtered} />
     </main>
   );
 }
