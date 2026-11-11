@@ -43,7 +43,22 @@ function isIsoDate(value: string | null): boolean {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
+function addMonths(isoDate: string, months: number): string {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const monthIndex = year * 12 + month - 1 + months;
+  const targetYear = Math.floor(monthIndex / 12);
+  const targetMonth = monthIndex % 12;
+  const lastDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(targetYear, targetMonth, Math.min(day, lastDay))).toISOString().slice(0, 10);
+}
+
 function mergeRows(existing: ImportRow, incoming: ImportRow): ImportRow {
+  const conclusionDate = [existing.loyaltyConclusionDate, incoming.loyaltyConclusionDate]
+    .filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
+  const endDate = conclusionDate
+    ? addMonths(conclusionDate, 24)
+    : [existing.loyaltyEndDate, incoming.loyaltyEndDate]
+      .filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
   return {
     ...existing,
     fullName: existing.fullName || incoming.fullName,
@@ -53,8 +68,8 @@ function mergeRows(existing: ImportRow, incoming: ImportRow): ImportRow {
     email: existing.email || incoming.email,
     address: existing.address || incoming.address,
     packageName: existing.packageName || incoming.packageName,
-    loyaltyEndDate: existing.loyaltyEndDate || incoming.loyaltyEndDate,
-    loyaltyConclusionDate: existing.loyaltyConclusionDate || incoming.loyaltyConclusionDate,
+    loyaltyEndDate: endDate,
+    loyaltyConclusionDate: conclusionDate,
     errors: [...new Set([...existing.errors, ...incoming.errors])],
   };
 }
