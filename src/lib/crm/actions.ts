@@ -188,3 +188,63 @@ export async function updateClientAction(_previous: FormActionState, formData: F
   revalidatePath("/clients/" + clientId);
   return { success: "Dados do cliente atualizados." };
 }
+
+
+const DEAL_STAGES = ["to_contact", "negotiation", "scheduled", "future_contact", "sale", "lost"] as const;
+
+export async function updateDealAction(_previous: FormActionState, formData: FormData): Promise<FormActionState> {
+  const context = await getActiveUser();
+  if (!context.userId) return { error: context.error ?? "Sessão inválida." };
+
+  const dealId = String(formData.get("deal_id") ?? "").trim();
+  const stage = String(formData.get("stage") ?? "");
+  const nextContactDate = String(formData.get("next_contact_date") ?? "").trim();
+  const lostReason = String(formData.get("lost_reason") ?? "").trim();
+  const notes = String(formData.get("notes") ?? "").trim();
+  const registerContact = formData.get("register_contact") === "on";
+
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dealId)) {
+    return { error: "Negócio inválido." };
+  }
+  if (!DEAL_STAGES.includes(stage as (typeof DEAL_STAGES)[number])) {
+    return { error: "Seleciona uma fase válida do funil." };
+  }
+  if (["scheduled", "future_contact"].includes(stage)) {
+    if (!nextContactDate || !validIsoDate(nextContactDate)) {
+      return { error: "Indica a data em que devemos voltar a contactar o cliente." };
+    }
+  }
+  if (stage === "lost" && !lostReason) {
+    return { error: "Indica o motivo pelo qual o negócio foi perdido." };
+  }
+  if (lostReason.length > 1000) return { error: "O motivo de perda não pode ultrapassar 1.000 caracteres." };
+  if (notes.length > 5000) return { error: "As notas não podem ultrapassar 5.000 caracteres." };
+
+  const updates: Record<string, unknown> = {
+    stage,
+    next_contact_at: ["scheduled", "future_contact"].includes(stage)
+      ? new Date(nextContactDate + "T12:00:00.000Z").toISOString()
+      : null,
+    lost_reason: stage === "lost" ? lostReason : null,
+    notes: notes || null,
+    updated_at: new Date().toISOString(),
+  };
+  if (registerContact) updates.last_contact_at = new Date().toISOString();
+
+  const { data: updatedDeal, error } = await context.supabase
+    .from("deals")
+    .update(updates)
+    .eq("id", dealId)
+    .select("id, client_id")
+    .maybeSingle();
+
+  if (error || !updatedDeal) {
+    console.error("[CRM_UPDATE_DEAL]", { code: error?.code, message: error?.message });
+    return { error: "Não foi possível atualizar o negócio. Confirma se continua associado à tua carteira." };
+  }
+
+  revalidatePath("/pipeline");
+  revalidatePath("/dashboard");
+  revalidatePath("/clients/" + updatedDeal.client_id);
+  return { success: "Negócio atualizado." };
+}
