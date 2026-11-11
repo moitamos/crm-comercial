@@ -59,6 +59,11 @@ Não introduzir dados reais de clientes até estar confirmada a autorização da
 - A ficha inclui os dados completos originais da folha Clientes e os dados de origem de cada serviço.
 - Os administradores de conta são associados pelo NIF; a ficha mostra nome, email, até quatro telefones, permissão de marketing, observações e os restantes campos importados.
 - A página continua a disponibilizar a ficha completa em formato de página para edição.
+- A listagem usa paginação no servidor: 20 clientes por página por defeito, com opções de 50 ou 100, preservando a pesquisa entre páginas.
+- A criação manual permite adicionar até 50 serviços ao mesmo cliente, cada um com tipo (MEO, M Móvel, GCP ou outro), número, tarifário/oferta, mensalidade, Data conclusão e/ou fim da fidelização.
+- Quando se introduz Data conclusão num serviço manual, o fim da fidelização é calculado com +24 meses; sem essa data, pode ser introduzido diretamente o fim conhecido.
+- Cliente e serviços manuais são criados numa única operação de base de dados (transação); se algum serviço falhar, não fica uma ficha parcial.
+- Após a criação manual, o CRM atualiza o funil com as renovações que já estejam elegíveis.
 - A dashboard mostra total de clientes, clientes ativos, negócios em aberto, renovações elegíveis, vendas do mês e contagens de serviços MEO, cartões móveis e GCP.
 
 ### Formatos suportados e mapeamento
