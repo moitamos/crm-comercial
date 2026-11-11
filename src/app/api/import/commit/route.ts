@@ -1,7 +1,8 @@
+import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import type { ImportRow } from "@/lib/crm/excel";
+import type { ImportAdministrator, ImportRow, ImportServiceType } from "@/lib/crm/excel";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +13,52 @@ type ExistingService = {
   service_number: string;
   package_name: string | null;
   loyalty_end_date: string | null;
+  loyalty_conclusion_date: string | null;
+  service_type: ImportServiceType;
+  source_data: Array<Record<string, string | null>> | Record<string, string | null>;
 };
+
+function cleanSourceRows(value: unknown): Array<Record<string, string | null>> {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 100).flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const record: Record<string, string | null> = {};
+    for (const [key, raw] of Object.entries(item).slice(0, 60)) {
+      record[String(key).slice(0, 100)] = raw === null || raw === undefined ? null : String(raw).slice(0, 2000);
+    }
+    return [record];
+  });
+}
+
+function uniqueSourceRows(items: Array<Record<string, string | null>>) {
+  const unique = new Map<string, Record<string, string | null>>();
+  for (const item of items) unique.set(JSON.stringify(item), item);
+  return [...unique.values()];
+}
+
+function cleanAdministrators(value: unknown): ImportAdministrator[] {
+  if (!Array.isArray(value)) return [];
+  const unique = new Map<string, ImportAdministrator>();
+  for (const raw of value.slice(0, 250)) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const item = raw as Partial<ImportAdministrator>;
+    const sourceRows = cleanSourceRows([item.sourceData]);
+    const sourceData = sourceRows[0] ?? {};
+    const administrator: ImportAdministrator = {
+      fullName: item.fullName ? String(item.fullName).slice(0, 200) : null,
+      phoneNumbers: Array.isArray(item.phoneNumbers)
+        ? [...new Set(item.phoneNumbers.map((phone) => String(phone).replace(/[^+0-9]/g, "").slice(0, 30)).filter(Boolean))].slice(0, 4)
+        : [],
+      email: item.email ? String(item.email).trim().toLowerCase().slice(0, 254) : null,
+      marketingPermission: item.marketingPermission ? String(item.marketingPermission).slice(0, 40) : null,
+      observations: item.observations ? String(item.observations).slice(0, 1000) : null,
+      sourceData,
+    };
+    const key = JSON.stringify(sourceData);
+    unique.set(key, administrator);
+  }
+  return [...unique.values()];
+}
 
 function normalizeRows(input: unknown): ImportRow[] {
   if (!Array.isArray(input) || input.length > 1500) return [];
@@ -28,7 +74,11 @@ function normalizeRows(input: unknown): ImportRow[] {
       email: row.email ? String(row.email).trim().slice(0, 254).toLowerCase() : null,
       address: row.address ? String(row.address).trim().slice(0, 300) : null,
       serviceNumber: row.serviceNumber ? String(row.serviceNumber).trim().slice(0, 100) : null,
-      packageName: row.packageName ? String(row.packageName).trim().slice(0, 60) : null,
+      packageName: row.packageName ? String(row.packageName).trim().slice(0, 120) : null,
+      serviceType: row.serviceType === "meo" || row.serviceType === "mobile" || row.serviceType === "gcp" ? row.serviceType : "other",
+      serviceData: cleanSourceRows(row.serviceData),
+      clientData: cleanSourceRows(row.clientData),
+      administrators: cleanAdministrators(row.administrators),
       loyaltyEndDate: row.loyaltyEndDate ? String(row.loyaltyEndDate) : null,
       loyaltyConclusionDate: row.loyaltyConclusionDate ? String(row.loyaltyConclusionDate) : null,
       errors: Array.isArray(row.errors) ? row.errors.map(String).slice(0, 10) : [],
@@ -68,6 +118,10 @@ function mergeRows(existing: ImportRow, incoming: ImportRow): ImportRow {
     email: existing.email || incoming.email,
     address: existing.address || incoming.address,
     packageName: existing.packageName || incoming.packageName,
+    serviceType: incoming.serviceType !== "other" ? incoming.serviceType : existing.serviceType,
+    serviceData: uniqueSourceRows([...existing.serviceData, ...incoming.serviceData]),
+    clientData: uniqueSourceRows([...existing.clientData, ...incoming.clientData]),
+    administrators: cleanAdministrators([...existing.administrators, ...incoming.administrators]),
     loyaltyEndDate: endDate,
     loyaltyConclusionDate: conclusionDate,
     errors: [...new Set([...existing.errors, ...incoming.errors])],
@@ -260,11 +314,91 @@ export async function POST(request: Request) {
       .map((row) => ({ clientId, row }));
   });
 
+  const clientDetailsRows = Array.from(groups.entries()).flatMap(([nif, items]) => {
+    const clientId = clientIds.get(nif);
+    if (!clientId) return [];
+    const sourceData = uniqueSourceRows(items.flatMap((row) => row.clientData));
+    return sourceData.length ? [{
+      client_id: clientId,
+      source_system: "PIU",
+      source_data: sourceData,
+      import_batch_id: batchId,
+      created_by: userId,
+      updated_at: new Date().toISOString(),
+    }] : [];
+  });
+
+  let clientDetailsSaved = 0;
+  if (clientDetailsRows.length) {
+    const saved = await supabase
+      .from("client_import_details")
+      .upsert(clientDetailsRows, { onConflict: "client_id,source_system" })
+      .select("id");
+    if (saved.error) {
+      await supabase.from("import_batches").update({
+        summary: { clients_created: clientsCreated, error: "Falha ao guardar os dados originais da folha Clientes.", detail: saved.error.message.slice(0, 500) },
+      }).eq("id", batchId);
+      return NextResponse.json({ error: "Os clientes foram criados, mas não foi possível guardar todos os campos originais da folha Clientes.", details: saved.error.message }, { status: 500 });
+    }
+    clientDetailsSaved = saved.data?.length ?? 0;
+  }
+
+  const administratorRows = new Map<string, {
+    client_id: string;
+    source_key: string;
+    full_name: string | null;
+    phone_numbers: string[];
+    email: string | null;
+    marketing_permission: string | null;
+    observations: string | null;
+    source_data: Record<string, string | null>;
+    import_batch_id: string;
+    created_by: string;
+    updated_at: string;
+  }>();
+
+  for (const [nif, items] of groups.entries()) {
+    const clientId = clientIds.get(nif);
+    if (!clientId) continue;
+    const administrators = cleanAdministrators(items.flatMap((row) => row.administrators));
+    for (const administrator of administrators) {
+      const sourceKey = createHash("sha256").update(JSON.stringify(administrator.sourceData)).digest("hex");
+      administratorRows.set(clientId + ":" + sourceKey, {
+        client_id: clientId,
+        source_key: sourceKey,
+        full_name: administrator.fullName,
+        phone_numbers: administrator.phoneNumbers,
+        email: administrator.email,
+        marketing_permission: administrator.marketingPermission,
+        observations: administrator.observations,
+        source_data: administrator.sourceData,
+        import_batch_id: batchId,
+        created_by: userId,
+        updated_at: new Date().toISOString(),
+      });
+    }
+  }
+
+  let administratorsSaved = 0;
+  if (administratorRows.size) {
+    const saved = await supabase
+      .from("client_administrators")
+      .upsert([...administratorRows.values()], { onConflict: "client_id,source_key" })
+      .select("id");
+    if (saved.error) {
+      await supabase.from("import_batches").update({
+        summary: { clients_created: clientsCreated, client_details_saved: clientDetailsSaved, error: "Falha ao guardar administradores.", detail: saved.error.message.slice(0, 500) },
+      }).eq("id", batchId);
+      return NextResponse.json({ error: "Os clientes foram guardados, mas não foi possível guardar os administradores.", details: saved.error.message }, { status: 500 });
+    }
+    administratorsSaved = saved.data?.length ?? 0;
+  }
+
   const serviceClientIds = Array.from(new Set(serviceGroups.map((item) => item.clientId)));
   const serviceNumbers = Array.from(new Set(serviceGroups.map((item) => item.row.serviceNumber as string)));
   const { data: existingServices, error: serviceCheckError } = serviceClientIds.length
     ? await supabase.from("services")
-      .select("client_id, service_number, package_name, loyalty_end_date")
+      .select("client_id, service_number, package_name, loyalty_end_date, loyalty_conclusion_date, service_type, source_data")
       .in("client_id", serviceClientIds)
       .in("service_number", serviceNumbers)
     : { data: [], error: null };
@@ -284,6 +418,9 @@ export async function POST(request: Request) {
       service_number: row.serviceNumber as string,
       package_name: row.packageName ?? existing?.package_name ?? null,
       loyalty_end_date: row.loyaltyEndDate ?? existing?.loyalty_end_date ?? null,
+      loyalty_conclusion_date: row.loyaltyConclusionDate ?? existing?.loyalty_conclusion_date ?? null,
+      service_type: row.serviceType !== "other" ? row.serviceType : existing?.service_type ?? "other",
+      source_data: row.serviceData.length ? row.serviceData : existing?.source_data ?? [],
       source: "excel" as const,
       import_batch_id: batchId,
       is_active: true,
@@ -335,6 +472,8 @@ export async function POST(request: Request) {
     clients_not_available_in_selected_portfolio: rejectedClientNifs.length,
     invalid_rows: validationRejections.length,
     distinct_services_received: serviceRows.length,
+    client_details_saved: clientDetailsSaved,
+    administrators_saved: administratorsSaved,
   };
 
   await supabase.from("import_batches").update({
@@ -364,6 +503,8 @@ export async function POST(request: Request) {
     clientsReused,
     servicesCreated,
     servicesUpdated,
+    clientDetailsSaved,
+    administratorsSaved,
     rejectedRows: rejectedTotal,
     dealsCreated,
     funnelRefreshWarning,
