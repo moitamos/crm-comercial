@@ -15,6 +15,15 @@ export type WorkbookAnalysis = {
   mode: "standard" | "piu";
   recognizedSheets: string[];
 };
+export type ImportAdministrator = {
+  fullName: string | null;
+  phoneNumbers: string[];
+  email: string | null;
+  marketingPermission: string | null;
+  observations: string | null;
+  sourceData: Record<string, string | null>;
+};
+export type ImportServiceType = "meo" | "mobile" | "gcp" | "other";
 export type ImportRow = {
   rowNumber: number;
   fullName: string;
@@ -26,6 +35,10 @@ export type ImportRow = {
   address: string | null;
   serviceNumber: string | null;
   packageName: string | null;
+  serviceType: ImportServiceType;
+  serviceData: Array<Record<string, string | null>>;
+  clientData: Array<Record<string, string | null>>;
+  administrators: ImportAdministrator[];
   loyaltyEndDate: string | null;
   loyaltyConclusionDate: string | null;
   errors: string[];
@@ -260,6 +273,26 @@ function valueAt(row: unknown[], index: number | null): unknown {
   return index === null ? null : row[index] ?? null;
 }
 
+function recordForRow(headers: ExcelColumn[], row: unknown[], rowNumber: number): Record<string, string | null> {
+  const output: Record<string, string | null> = {};
+  for (const header of headers) {
+    const key = header.name === "(sem título)" ? "Coluna " + header.letter : header.name;
+    output[key] = cellText(row[header.column - 1]) || null;
+  }
+  output["Linha Excel"] = String(rowNumber);
+  return output;
+}
+
+function uniqueRecords<T>(items: T[], keyOf: (item: T) => string): T[] {
+  const result = new Map<string, T>();
+  for (const item of items) result.set(keyOf(item), item);
+  return [...result.values()];
+}
+
+function uniqueAdministrators(items: ImportAdministrator[]): ImportAdministrator[] {
+  return uniqueRecords(items, (item) => JSON.stringify(item.sourceData));
+}
+
 function dateIso(value: unknown): string | null {
   if (value === null || value === undefined || value === "") return null;
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
@@ -334,7 +367,8 @@ function normalizeMapping(input: unknown): ImportMapping {
 function emptyRow(rowNumber: number, fullName: string, nif: string): ImportRow {
   return {
     rowNumber, fullName, nif, nic: null, ncc: null, phone: null, email: null, address: null,
-    serviceNumber: null, packageName: null, loyaltyEndDate: null, loyaltyConclusionDate: null, errors: [],
+    serviceNumber: null, packageName: null, serviceType: "other", serviceData: [], clientData: [],
+    administrators: [], loyaltyEndDate: null, loyaltyConclusionDate: null, errors: [],
   };
 }
 
@@ -354,6 +388,10 @@ function mergeDuplicateRows(existing: ImportRow, incoming: ImportRow): ImportRow
     email: existing.email || incoming.email,
     address: existing.address || incoming.address,
     packageName: existing.packageName || incoming.packageName,
+    serviceType: incoming.serviceType !== "other" ? incoming.serviceType : existing.serviceType,
+    serviceData: uniqueRecords([...existing.serviceData, ...incoming.serviceData], (item) => JSON.stringify(item)),
+    clientData: uniqueRecords([...existing.clientData, ...incoming.clientData], (item) => JSON.stringify(item)),
+    administrators: uniqueAdministrators([...existing.administrators, ...incoming.administrators]),
     loyaltyEndDate: endDate,
     loyaltyConclusionDate: conclusionDate,
     errors: [...new Set([...existing.errors, ...incoming.errors])],
@@ -396,6 +434,7 @@ function consolidateRows(input: ImportRow[]): { rows: ImportRow[]; duplicateCoun
 function buildPiuRows(sheets: RawSheet[]): ImportRow[] {
   const clientsSheet = sheets.find((sheet) => norm(sheet.name) === "clientes");
   if (!clientsSheet) return [];
+
   const clientHeader = bestHeader(clientsSheet);
   const clientMapping = clientHeader.mapping;
   const clients = new Map<string, ImportRow>();
@@ -405,9 +444,58 @@ function buildPiuRows(sheets: RawSheet[]): ImportRow[] {
     const nif = cellText(valueAt(source, clientMapping.nif ? clientMapping.nif - 1 : null)).replace(/\D/g, "");
     const fullName = cellText(valueAt(source, clientMapping.fullName ? clientMapping.fullName - 1 : null));
     if (!/^\d{9}$/.test(nif) || !fullName) continue;
+
     const row = emptyRow(index + 1, fullName, nif);
     row.nic = cellText(valueAt(source, clientMapping.nic ? clientMapping.nic - 1 : null)) || null;
-    clients.set(nif, row);
+    row.clientData = [recordForRow(clientHeader.headers, source, index + 1)];
+    const existing = clients.get(nif);
+    clients.set(nif, existing ? mergeDuplicateRows(existing, row) : row);
+  }
+
+  const administratorsByNif = new Map<string, ImportAdministrator[]>();
+  const administratorsSheet = sheets.find((sheet) => norm(sheet.name) === "administradores");
+  if (administratorsSheet) {
+    const adminHeader = bestHeader(administratorsSheet);
+    const headers = adminHeader.headers;
+    const getIndex = (aliases: string[]) => headerIndex(headers, aliases);
+    const nifIndex = getIndex(["NIF", "Contribuinte"]);
+    const typeIndex = getIndex(["Tipo de linha"]);
+    const contactTypeIndex = getIndex(["Tipo de Contacto", "Tipo contacto"]);
+    const nameIndex = getIndex(["NOME", "Nome administrador"]);
+    const emailIndex = getIndex(["EMAIL", "Email"]);
+    const marketingIndex = getIndex(["PERMISSÃO DE MARKETING", "Permissão marketing"]);
+    const observationsIndex = getIndex(["OBSERVAÇÕES", "Observações"]);
+    const phoneIndexes = [
+      getIndex(["TELEFONE 1", "Telefone 1"]),
+      getIndex(["TELEFONE 2", "Telefone 2"]),
+      getIndex(["TELEFONE 3", "Telefone 3"]),
+      getIndex(["TELEFONE 4", "Telefone 4"]),
+    ];
+
+    for (let index = adminHeader.row; index < administratorsSheet.rows.length; index++) {
+      const source = administratorsSheet.rows[index];
+      const nif = cellText(valueAt(source, nifIndex)).replace(/\D/g, "");
+      if (!/^\d{9}$/.test(nif)) continue;
+      const lineType = cellText(valueAt(source, typeIndex));
+      const contactType = cellText(valueAt(source, contactTypeIndex));
+      if (lineType && norm(lineType) !== "detalhe") continue;
+      if (contactType && !norm(contactType).includes("administradordeconta")) continue;
+
+      const sourceData = recordForRow(headers, source, index + 1);
+      const administrator: ImportAdministrator = {
+        fullName: cellText(valueAt(source, nameIndex)) || null,
+        phoneNumbers: uniqueRecords(
+          phoneIndexes.map((column) => cellText(valueAt(source, column))).filter(Boolean),
+          (phone) => phone,
+        ),
+        email: cellText(valueAt(source, emailIndex)).trim().toLowerCase() || null,
+        marketingPermission: cellText(valueAt(source, marketingIndex)) || null,
+        observations: cellText(valueAt(source, observationsIndex)) || null,
+        sourceData,
+      };
+      const existing = administratorsByNif.get(nif) ?? [];
+      administratorsByNif.set(nif, uniqueAdministrators([...existing, administrator]));
+    }
   }
 
   const result: ImportRow[] = [];
@@ -428,20 +516,24 @@ function buildPiuRows(sheets: RawSheet[]): ImportRow[] {
     let packageColumn: number | null = null;
     let endDateColumn: number | null = null;
     let conclusionDateColumn: number | null = null;
+    let serviceType: ImportServiceType = "other";
 
     if (sheetName === "refidmeo") {
+      serviceType = "meo";
       serviceColumn = headerIndex(headers, ["Serviço", "N.º serviço", "Número serviço"]);
       packageColumn = headerIndex(headers, ["Oferta Comercial", "Pacote Base", "Grupo Oferta"]);
       endDateColumn = headerIndex(headers, ["Data Fim Fidelização", "Data Fidelização"]);
       conclusionDateColumn = headerIndex(headers, ["Data Conclusão", "Data de Conclusão"]);
     } else if (sheetName === "cartoesmoveis") {
+      serviceType = "mobile";
       serviceColumn = headerIndex(headers, ["N.º Cartão", "Nº Cartão", "Número Cartão"]);
       packageColumn = headerIndex(headers, ["Tarifário", "Serviço"]);
       endDateColumn = headerIndex(headers, ["Data Fim Fidelização", "Data Fidelização"]);
       conclusionDateColumn = headerIndex(headers, ["Data Conclusão", "Data de Conclusão"]);
     } else {
+      serviceType = "gcp";
       serviceColumn = headerIndex(headers, ["NUM_INST_SOLUC", "N.º serviço", "Serviço"]);
-      packageColumn = headerIndex(headers, ["Pacote", "Serviço"]) ?? null;
+      packageColumn = headerIndex(headers, ["OFERTA", "Pacote", "Serviço"]);
       nccColumn = headerIndex(headers, ["NCC"]) ?? nccColumn;
       endDateColumn = headerIndex(headers, ["DATA_FIM_FIDELIZAÇÃO", "Data Fim Fidelização"]);
       conclusionDateColumn = headerIndex(headers, ["DATA_CONCLUSÃO", "Data Conclusão", "Data de Conclusão"]);
@@ -453,22 +545,28 @@ function buildPiuRows(sheets: RawSheet[]): ImportRow[] {
       const serviceNumber = cellText(valueAt(source, serviceColumn));
       const nif = cellText(valueAt(source, nifColumn)).replace(/\D/g, "");
       if (!serviceNumber || !/^\d{9}$/.test(nif)) continue;
+
       const existingClient = clients.get(nif);
       const fullName = cellText(valueAt(source, nameColumn)) || existingClient?.fullName || "";
       if (!fullName) continue;
 
       const row = emptyRow(index + 1, fullName, nif);
       row.nic = cellText(valueAt(source, nicColumn)) || existingClient?.nic || null;
-      row.ncc = cellText(valueAt(source, nccColumn)) || existingClient?.ncc || null;
+      row.ncc = cellText(valueAt(source, nccColumn)) || null;
       row.serviceNumber = serviceNumber.slice(0, 100);
+      row.serviceType = serviceType;
+      row.clientData = existingClient?.clientData ?? [];
+      row.administrators = administratorsByNif.get(nif) ?? [];
+      row.serviceData = [recordForRow(headers, source, index + 1)];
 
-      if (sheetName === "gcpack") {
+      if (serviceType === "gcp") {
         row.packageName = "GCP";
       } else {
-        const packageText = cellText(valueAt(source, packageColumn));
-        const serviceLabel = sheetName === "cartoesmoveis" ? cellText(valueAt(source, headerIndex(headers, ["Serviço"]))) : "";
-        row.packageName = packageCode(serviceLabel || packageText);
+        row.packageName = cellText(valueAt(source, packageColumn))
+          || cellText(valueAt(source, headerIndex(headers, ["Serviço"])))
+          || null;
       }
+      if (row.packageName) row.packageName = packageCode(row.packageName);
 
       const rawEndDate = valueAt(source, endDateColumn);
       const rawConclusionDate = valueAt(source, conclusionDateColumn);
@@ -486,16 +584,18 @@ function buildPiuRows(sheets: RawSheet[]): ImportRow[] {
   }
 
   const nifsWithServices = new Set(result.map((row) => row.nif));
-  for (const [nif, client] of clients) if (!nifsWithServices.has(nif)) result.push(client);
+  for (const [nif, client] of clients) {
+    client.administrators = administratorsByNif.get(nif) ?? [];
+    if (!nifsWithServices.has(nif)) result.push(client);
+  }
 
   return result;
 }
-
 export async function analyzeWorkbook(buffer: Uint8Array, fileName: string): Promise<WorkbookAnalysis> {
   const sheets = await readWorkbook(buffer, fileName);
   if (isPiuExport(sheets)) {
     const recognizedSheets = sheets
-      .filter((sheet) => ["clientes", "refidmeo", "cartoesmoveis", "gcpack"].includes(norm(sheet.name)))
+      .filter((sheet) => ["clientes", "refidmeo", "cartoesmoveis", "gcpack", "administradores"].includes(norm(sheet.name)))
       .map((sheet) => sheet.name);
     return {
       sheetName: "Várias folhas",
@@ -572,6 +672,7 @@ export async function parseWorkbook(
     const nif = cellText(value("nif")).replace(/\D/g, "");
     const serviceNumber = cellText(value("serviceNumber")) || null;
     const row = emptyRow(index + 1, fullName, nif);
+    row.serviceType = "other";
     row.nic = cellText(value("nic")) || null;
     row.ncc = cellText(value("ncc")) || null;
     row.phone = cellText(value("phone")).replace(/[\s().-]/g, "") || null;
