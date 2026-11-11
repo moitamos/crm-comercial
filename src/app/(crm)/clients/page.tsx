@@ -52,14 +52,12 @@ export default async function ClientsPage({ searchParams }: Props) {
   let { data: clients, error, count } = await loadPage(currentPage);
   const totalCount = count ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / perPage));
-  if (totalCount === 0) currentPage = 1;
 
-  if (!error && totalCount > 0 && currentPage > totalPages)
+  if (!error && totalCount > 0 && currentPage > totalPages) {
     currentPage = totalPages;
     const lastPage = await loadPage(currentPage);
     clients = lastPage.data;
     error = lastPage.error;
-    count = lastPage.count;
   }
 
   const firstResult = totalCount === 0 ? 0 : (currentPage - 1) * perPage + 1;
