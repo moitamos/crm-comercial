@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Search, UserPlus, Upload, Users } from "lucide-react";
+import { ClientDetailsButton } from "@/components/crm/client-details-button";
 import { createClient } from "@/lib/supabase/server";
 
 type Props = { searchParams: Promise<{ q?: string }> };
@@ -15,7 +16,7 @@ export default async function ClientsPage({ searchParams }: Props) {
 
   let request = supabase
     .from("clients")
-    .select("id, full_name, nif, nic, ncc, phone, email, created_at, services(id, service_number, package_name, loyalty_end_date, is_active)", { count: "exact" })
+    .select("id, full_name, nif, nic, ncc, phone, email, created_at, services(id, service_number, service_type, package_name, loyalty_end_date, is_active)", { count: "exact" })
     .order("full_name", { ascending: true })
     .limit(100);
 
@@ -77,39 +78,35 @@ export default async function ClientsPage({ searchParams }: Props) {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] border-collapse text-left text-sm">
+            <table className="w-full min-w-[700px] border-collapse text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-5 py-4 font-semibold">Cliente</th>
                   <th className="px-5 py-4 font-semibold">NIF</th>
-                  <th className="px-5 py-4 font-semibold">NIC / NCC</th>
-                  <th className="px-5 py-4 font-semibold">Serviços</th>
-                  <th className="px-5 py-4 font-semibold">Contacto</th>
+                  <th className="px-5 py-4 font-semibold text-center">MEO</th>
+                  <th className="px-5 py-4 font-semibold text-center">M Móvel</th>
+                  <th className="px-5 py-4 font-semibold text-center">GCP</th>
                   <th className="px-5 py-4 font-semibold"><span className="sr-only">Abrir</span></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {(clients ?? []).map((client) => {
                   const services = client.services ?? [];
-                  const activeServices = services.filter((service) => service.is_active).length;
+                  const meoCount = services.filter((service) => service.service_type === "meo").length;
+                  const mobileCount = services.filter((service) => service.service_type === "mobile").length;
+                  const gcpCount = services.filter((service) => service.service_type === "gcp").length;
                   return (
                     <tr key={client.id} className="transition hover:bg-slate-50/70">
                       <td className="px-5 py-4">
-                        <Link href={"/clients/" + client.id} className="font-semibold text-slate-900 hover:text-blue-700">{client.full_name}</Link>
+                        <ClientDetailsButton clientId={client.id} clientName={client.full_name} />
                         <p className="mt-1 text-xs text-slate-400">Criado em {new Date(client.created_at).toLocaleDateString("pt-PT")}</p>
                       </td>
                       <td className="px-5 py-4 font-mono text-sm text-slate-700">{client.nif}</td>
-                      <td className="px-5 py-4 text-slate-600">
-                        <span className="block">{client.nic ?? "—"}</span>
-                        <span className="mt-1 block text-xs text-slate-400">{client.ncc ?? "—"}</span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className="font-semibold text-slate-800">{services.length}</span>
-                        <span className="ml-1 text-xs text-slate-400">({activeServices} ativos)</span>
-                      </td>
-                      <td className="px-5 py-4 text-slate-600">{client.phone ?? client.email ?? "—"}</td>
+                      <td className="px-5 py-4 text-center"><span className="inline-flex min-w-8 justify-center rounded-lg bg-blue-50 px-2.5 py-1.5 font-semibold text-blue-800">{meoCount}</span></td>
+                      <td className="px-5 py-4 text-center"><span className="inline-flex min-w-8 justify-center rounded-lg bg-violet-50 px-2.5 py-1.5 font-semibold text-violet-800">{mobileCount}</span></td>
+                      <td className="px-5 py-4 text-center"><span className="inline-flex min-w-8 justify-center rounded-lg bg-emerald-50 px-2.5 py-1.5 font-semibold text-emerald-800">{gcpCount}</span></td>
                       <td className="px-5 py-4 text-right">
-                        <Link href={"/clients/" + client.id} className="font-semibold text-blue-700 hover:text-blue-900">Ver ficha</Link>
+                        <Link href={"/clients/" + client.id} className="font-semibold text-blue-700 hover:text-blue-900">Ficha completa</Link>
                       </td>
                     </tr>
                   );
