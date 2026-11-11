@@ -50,3 +50,14 @@ npm run build
 
 ## Segurança / RGPD
 Não introduzir dados reais de clientes até estar confirmada a autorização da empresa, a base legal, a política de retenção e o controlo de acesso. Ativar MFA na conta Supabase/Vercel e usar palavras-passe fortes.
+
+## Gestão de clientes e importação Excel
+
+- Consulta da carteira com pesquisa por nome, NIF, NIC e NCC.
+- Ficha individual com serviços e datas de fidelização.
+- Criação e edição de dados de contacto do cliente.
+- Importação de ficheiros `.xlsx` com pré-visualização, validação de NIF e controlo de duplicados.
+- Modelo Excel disponível em `/api/import/template`.
+- Colunas: Nome, NIF, N cliente, N conta, N serviço, Data fidelização e Serviço.
+- Cada linha representa um serviço. Linhas com o mesmo NIF são agrupadas num único cliente.
+- A importação não transfere clientes entre carteiras.

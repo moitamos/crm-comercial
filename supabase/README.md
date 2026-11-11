@@ -45,7 +45,7 @@ Em Supabase → Authentication → URL Configuration, configura:
 
 O wildcard permite previews Vercel com URLs dinâmicos. Quando ligares um domínio próprio, substitui a Site URL e adiciona esse domínio à allow list.
 
-## Segurança
+## Gestão de clientes e importação Excel\n- A tabela `services` tem unicidade por cliente e número de serviço.\n- A tabela `import_batches` permite atualizar os resultados de uma importação pelo utilizador que a iniciou ou por um administrador.\n- A importação agrupa linhas pelo NIF e associa vários serviços ao mesmo cliente.\n\n## Segurança
 - NIF tem restrição UNIQUE global e validação de 9 dígitos.
 - Cada cliente tem uma única carteira.
 - Um comercial só pode ser atribuído a uma carteira de que é membro.

@@ -1,7 +1,8 @@
 "use client";
 
 import { useActionState } from "react";
-import { updateClientAction, type FormActionState } from "@/lib/crm/actions";
+import { updateClientAction } from "@/lib/crm/actions";
+import type { FormActionState } from "@/lib/crm/types";
 
 export function ClientEditForm({ client }: {
   client: { id: string; full_name: string; phone: string | null; email: string | null; address: string | null; notes: string | null };

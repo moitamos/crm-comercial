@@ -1,7 +1,8 @@
 "use client";
 
 import { useActionState } from "react";
-import { createClientAction, type FormActionState } from "@/lib/crm/actions";
+import { createClientAction } from "@/lib/crm/actions";
+import type { FormActionState } from "@/lib/crm/types";
 
 type Portfolio = { id: string; name: string };
 const initialState: FormActionState = {};

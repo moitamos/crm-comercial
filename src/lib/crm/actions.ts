@@ -3,11 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-
-export type FormActionState = {
-  error?: string;
-  success?: string;
-};
+import type { FormActionState } from "@/lib/crm/types";
 
 async function getActiveUser() {
   const supabase = await createClient();
