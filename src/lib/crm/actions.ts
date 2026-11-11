@@ -92,7 +92,8 @@ export async function updateClientAction(_previous: FormActionState, formData: F
 
   const clientId = String(formData.get("client_id") ?? "");
   const fullName = String(formData.get("full_name") ?? "").trim();
-  const phone = String(formData.get("phone") ?? "").trim() || null;
+  const rawPhone = String(formData.get("phone") ?? "").trim();
+  const phone = rawPhone ? rawPhone.replace(/[\\s().-]/g, "") : null;
   const email = String(formData.get("email") ?? "").trim().toLowerCase() || null;
   const address = String(formData.get("address") ?? "").trim() || null;
   const notes = String(formData.get("notes") ?? "").trim() || null;
