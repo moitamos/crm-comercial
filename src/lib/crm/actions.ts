@@ -163,6 +163,8 @@ export async function updateClientAction(_previous: FormActionState, formData: F
 
   const clientId = String(formData.get("client_id") ?? "");
   const fullName = String(formData.get("full_name") ?? "").trim();
+  const nic = String(formData.get("nic") ?? "").trim() || null;
+  const ncc = String(formData.get("ncc") ?? "").trim() || null;
   const rawPhone = String(formData.get("phone") ?? "").trim();
   const phone = rawPhone ? rawPhone.replace(/[\\s().-]/g, "") : null;
   const email = String(formData.get("email") ?? "").trim().toLowerCase() || null;
@@ -171,12 +173,13 @@ export async function updateClientAction(_previous: FormActionState, formData: F
 
   if (!clientId) return { error: "Cliente inválido." };
   if (!fullName || fullName.length > 200) return { error: "Indica o nome do cliente (máximo 200 caracteres)." };
+  if ((nic && nic.length > 80) || (ncc && ncc.length > 80)) return { error: "O NIC e o NCC não podem ultrapassar 80 caracteres." };
   if (phone && !isValidPhone(phone)) return { error: "O telefone deve conter apenas algarismos e, opcionalmente, o prefixo +." };
   if (!isValidEmail(email)) return { error: "Indica um email válido." };
 
   const { error } = await context.supabase
     .from("clients")
-    .update({ full_name: fullName, phone, email, address, notes, updated_at: new Date().toISOString() })
+    .update({ full_name: fullName, nic, ncc, phone, email, address, notes, updated_at: new Date().toISOString() })
     .eq("id", clientId);
 
   if (error) return { error: "Não foi possível guardar as alterações. Confirma se o cliente pertence à tua carteira." };
