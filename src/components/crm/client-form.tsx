@@ -73,7 +73,14 @@ export function ClientForm({ portfolios }: { portfolios: Portfolio[] }) {
     if (services.length === 1) setNextServiceId((value) => value + 1);
   }
 
-  const servicePayload = services.map(({ id: _id, ...service }) => service);
+  const servicePayload = services.map((service) => ({
+    service_number: service.service_number,
+    service_type: service.service_type,
+    package_name: service.package_name,
+    current_monthly_fee: service.current_monthly_fee,
+    loyalty_conclusion_date: service.loyalty_conclusion_date,
+    loyalty_end_date: service.loyalty_end_date,
+  }));
 
   return (
     <form action={formAction} className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
