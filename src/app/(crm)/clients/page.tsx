@@ -45,7 +45,7 @@ function ClientCountMetric({ value }: { value: number }) {
   return (
     <div className="inline-flex self-start items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
       <span className="text-xs font-medium text-slate-500">Clientes</span>
-      <span className="text-xs text-slate-400">—</span>
+      <span className="text-xs text-slate-400">-</span>
       <span className="text-sm font-semibold tabular-nums text-slate-900">{value.toLocaleString("pt-PT")}</span>
     </div>
   );
