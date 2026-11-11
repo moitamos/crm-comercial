@@ -125,7 +125,7 @@ export function ExcelImportForm({ portfolios }: { portfolios: Portfolio[] }) {
             </table>
           </div>
           {preview.rows.length > 30 && <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">A mostrar 30 das {preview.rows.length} linhas. Todas as linhas válidas serão consideradas.</p>}
-          <div className="border-t border-slate-100 px-5 py-4 text-xs leading-5 text-slate-500">As linhas com erros não serão importadas. Clientes com NIF existente noutra carteira não serão transferidos nem duplicados. Serviços já registados para o mesmo cliente serão ignorados.</div>
+          <div className="border-t border-slate-100 px-5 py-4 text-xs leading-5 text-slate-500">As linhas com erros não serão importadas. Clientes com NIF existente noutra carteira não serão transferidos nem duplicados. Quando o cliente já existe na carteira, o serviço correspondente é atualizado com o pacote e a data de fidelização do ficheiro.</div>
         </section>
       )}
 
