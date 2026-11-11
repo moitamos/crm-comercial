@@ -6,7 +6,7 @@ import type { ImportRow } from "@/lib/crm/excel";
 
 type Portfolio = { id: string; name: string };
 type Preview = { fileName: string; rowCount: number; rows: ImportRow[]; warnings: string[] };
-type CommitResult = { success: true; clientsCreated: number; clientsReused: number; servicesCreated: number; duplicateServices: number; rejectedRows: number };
+type CommitResult = { success: true; clientsCreated: number; clientsReused: number; servicesCreated: number; servicesUpdated: number; rejectedRows: number };
 type ErrorResult = { error: string };
 
 export function ExcelImportForm({ portfolios }: { portfolios: Portfolio[] }) {
@@ -135,8 +135,8 @@ export function ExcelImportForm({ portfolios }: { portfolios: Portfolio[] }) {
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <p className="text-sm text-emerald-800"><strong className="block text-2xl">{result.clientsCreated}</strong>clientes criados</p>
             <p className="text-sm text-emerald-800"><strong className="block text-2xl">{result.clientsReused}</strong>clientes existentes</p>
-            <p className="text-sm text-emerald-800"><strong className="block text-2xl">{result.servicesCreated}</strong>serviços adicionados</p>
-            <p className="text-sm text-emerald-800"><strong className="block text-2xl">{result.duplicateServices}</strong>serviços repetidos ignorados</p>
+            <p className="text-sm text-emerald-800"><strong className="block text-2xl">{result.servicesCreated}</strong>serviços criados</p>
+            <p className="text-sm text-emerald-800"><strong className="block text-2xl">{result.servicesUpdated}</strong>serviços atualizados</p>
           </div>
           {result.rejectedRows > 0 && <p className="mt-3 text-sm text-amber-800">{result.rejectedRows} linha(s) não foram importadas. Consulta a mensagem e corrige o Excel antes de repetir.</p>}
           <a href="/clients" className="mt-4 inline-flex rounded-lg bg-emerald-800 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-900">Consultar clientes importados</a>
