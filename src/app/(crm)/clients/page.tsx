@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Search, UserPlus, Upload, Users } from "lucide-react";
+import { Search, UserPlus, Upload, Users, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight } from "lucide-react";
 import { ClientDetailsButton } from "@/components/crm/client-details-button";
 import { ClientListFilters } from "@/components/crm/client-list-filters";
 import { createClient } from "@/lib/supabase/server";
@@ -38,6 +38,65 @@ function Metric({ label, value }: { label: string; value: number }) {
       <p className="text-[11px] font-medium text-slate-500">{label}</p>
       <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">{value.toLocaleString("pt-PT")}</p>
     </div>
+  );
+}
+
+function ClientCountMetric({ value }: { value: number }) {
+  return (
+    <div className="inline-flex self-start items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+      <span className="text-xs font-medium text-slate-500">Clientes</span>
+      <span className="text-xs text-slate-400">—</span>
+      <span className="text-sm font-semibold tabular-nums text-slate-900">{value.toLocaleString("pt-PT")}</span>
+    </div>
+  );
+}
+
+function ClientPagination({
+  currentPage,
+  totalPages,
+  perPage,
+  query,
+  selectedPackage,
+}: {
+  currentPage: number;
+  totalPages: number;
+  perPage: number;
+  query: string;
+  selectedPackage: string;
+}) {
+  const controls = [
+    { label: "Primeira página", page: 1, icon: <ChevronsLeft size={16} /> },
+    { label: "Página anterior", page: currentPage - 1, icon: <ChevronLeft size={16} /> },
+    { label: "Página seguinte", page: currentPage + 1, icon: <ChevronRight size={16} /> },
+    { label: "Última página", page: totalPages, icon: <ChevronsRight size={16} /> },
+  ];
+
+  return (
+    <nav aria-label="Paginação de clientes" className="flex items-center gap-1">
+      {controls.map((control, index) => {
+        const disabled = index < 2 ? currentPage === 1 : currentPage === totalPages;
+        const className = "inline-flex h-8 w-8 items-center justify-center rounded-md border transition " +
+          (disabled
+            ? "cursor-not-allowed border-slate-100 text-slate-300"
+            : "border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900");
+
+        return disabled ? (
+          <span key={control.label} aria-label={control.label} aria-disabled="true" className={className}>
+            {control.icon}
+          </span>
+        ) : (
+          <Link
+            key={control.label}
+            href={pageHref(control.page, perPage, query, selectedPackage)}
+            aria-label={control.label}
+            title={control.label}
+            className={className}
+          >
+            {control.icon}
+          </Link>
+        );
+      })}
+    </nav>
   );
 }
 
@@ -156,7 +215,7 @@ export default async function ClientsPage({ searchParams }: Props) {
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-        <Metric label="Clientes" value={portfolioClients} />
+        <ClientCountMetric value={portfolioClients} />
         <Metric label="MxO's · M4/M5/Sport Office 4/5" value={mxoCount} />
         <Metric label="M Móveis" value={mobileCount} />
         <Metric label="GCP's" value={gcpCount} />
@@ -186,6 +245,16 @@ export default async function ClientsPage({ searchParams }: Props) {
       {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">Não foi possível consultar a carteira. Confirma as permissões e tenta novamente.</div>}
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2">
+          <p className="text-xs text-slate-400">Página {currentPage} de {totalPages}</p>
+          <ClientPagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            perPage={perPage}
+            query={query}
+            selectedPackage={selectedPackage}
+          />
+        </div>
         {(clients?.length ?? 0) === 0 ? (
           <div className="flex flex-col items-center px-6 py-16 text-center">
             <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-700"><Users size={23} /></span>
@@ -248,26 +317,19 @@ export default async function ClientsPage({ searchParams }: Props) {
             </table>
           </div>
         )}
-      </section>
-
-      <div className="flex flex-col justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center">
-        <div>
-          <p className="text-sm font-medium text-slate-700">A mostrar {firstResult.toLocaleString("pt-PT")}–{lastResult.toLocaleString("pt-PT")} de {totalCount.toLocaleString("pt-PT")} clientes</p>
-          <p className="mt-1 text-xs text-slate-400">Página {currentPage} de {totalPages}</p>
+        <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-2.5">
+          <p className="text-xs font-medium text-slate-500">
+            A mostrar {firstResult.toLocaleString("pt-PT")}–{lastResult.toLocaleString("pt-PT")} de {totalCount.toLocaleString("pt-PT")} clientes
+          </p>
+          <ClientPagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            perPage={perPage}
+            query={query}
+            selectedPackage={selectedPackage}
+          />
         </div>
-        <nav aria-label="Paginação de clientes" className="flex items-center gap-2">
-          {currentPage > 1 ? (
-            <Link href={pageHref(currentPage - 1, perPage, query, selectedPackage)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Anterior</Link>
-          ) : (
-            <span className="rounded-lg border border-slate-100 px-3 py-2 text-sm text-slate-300">Anterior</span>
-          )}
-          {currentPage < totalPages ? (
-            <Link href={pageHref(currentPage + 1, perPage, query, selectedPackage)} className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800">Seguinte</Link>
-          ) : (
-            <span className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-400">Seguinte</span>
-          )}
-        </nav>
-      </div>
+      </section>
     </main>
   );
 }
