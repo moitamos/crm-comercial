@@ -61,7 +61,7 @@ export function getServicePackageLabel(service: ServicePackageSource): string | 
     const sourceName = normalizedText(serviceName ?? service.package_name ?? "");
     if (sourceName === "vpn e outros" || sourceName.includes("vpn")) return null;
 
-    const hasMobileService = sourceName === "m movel" || sourceName === "m movel" ||
+    const hasMobileService = sourceName === "m movel" ||
       normalizedText(service.package_name ?? "") === "m movel" ||
       rows.some((row) => normalizedText(String(row["Oferta comercial atual"] ?? "")).includes("m movel"));
     return hasMobileService ? "M MOVEL" : null;
