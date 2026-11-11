@@ -547,11 +547,13 @@ function buildPiuRows(sheets: RawSheet[]): ImportRow[] {
       if (!serviceNumber || !/^\d{9}$/.test(nif)) continue;
 
       const existingClient = clients.get(nif);
-      const fullName = cellText(valueAt(source, nameColumn)) || existingClient?.fullName || "";
+      // The main Clientes sheet is the canonical customer name; the service sheets
+      // occasionally contain abbreviations or reordered names for the same NIF.
+      const fullName = existingClient?.fullName || cellText(valueAt(source, nameColumn));
       if (!fullName) continue;
 
       const row = emptyRow(index + 1, fullName, nif);
-      row.nic = cellText(valueAt(source, nicColumn)) || existingClient?.nic || null;
+      row.nic = existingClient?.nic || cellText(valueAt(source, nicColumn)) || null;
       row.ncc = cellText(valueAt(source, nccColumn)) || null;
       row.serviceNumber = serviceNumber.slice(0, 100);
       row.serviceType = serviceType;
