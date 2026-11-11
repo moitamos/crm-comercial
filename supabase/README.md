@@ -37,9 +37,13 @@ Já estão definidas, em Production, Preview e Development:
 - \`NEXT_PUBLIC_SUPABASE_URL\`
 - \`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY\`
 
-Depois de confirmares o domínio Vercel/produção, configura em Supabase → Authentication → URL Configuration:
-- Site URL para o domínio de produção.
-- Redirect URLs para os endereços do CRM, incluindo o URL de preview que vais usar para testar recuperação de palavra-passe.
+Em Supabase → Authentication → URL Configuration, configura:
+- **Site URL:** `https://crm-comercial-rust-seven.vercel.app`
+- **Redirect URLs de produção:** `https://crm-comercial-rust-seven.vercel.app/**`
+- **Redirect URLs de preview:** `https://*-joaopedrorcp-7164.vercel.app/**`
+- **Redirect URL local:** `http://localhost:3000/**`
+
+O wildcard permite previews Vercel com URLs dinâmicos. Quando ligares um domínio próprio, substitui a Site URL e adiciona esse domínio à allow list.
 
 ## Segurança
 - NIF tem restrição UNIQUE global e validação de 9 dígitos.
