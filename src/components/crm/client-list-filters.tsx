@@ -22,14 +22,14 @@ export function ClientListFilters({ perPage, selectedPackage, packages }: Props)
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <label className="flex items-center gap-2 text-xs font-medium text-slate-500">
+    <div className="flex flex-wrap items-center gap-2">
+      <label className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
         Pacote
         <select
           aria-label="Filtrar por pacote"
           value={selectedPackage}
           onChange={(event) => updateFilter("package", event.target.value)}
-          className="max-w-[220px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+          className="max-w-[220px] rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
         >
           <option value="">Todos</option>
           {packages.map((item) => <option key={item} value={item}>{item}</option>)}
@@ -41,7 +41,7 @@ export function ClientListFilters({ perPage, selectedPackage, packages }: Props)
           aria-label="Clientes por página"
           value={String(perPage)}
           onChange={(event) => updateFilter("perPage", event.target.value)}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
         >
           <option value="20">20</option>
           <option value="50">50</option>
