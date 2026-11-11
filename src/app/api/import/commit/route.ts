@@ -362,7 +362,12 @@ export async function POST(request: Request) {
     if (!clientId) continue;
     const administrators = cleanAdministrators(items.flatMap((row) => row.administrators));
     for (const administrator of administrators) {
-      const sourceKey = createHash("sha256").update(JSON.stringify(administrator.sourceData)).digest("hex");
+      const identity = JSON.stringify({
+        name: administrator.fullName?.trim().toLocaleLowerCase("pt-PT") ?? "",
+        email: administrator.email?.trim().toLocaleLowerCase("pt-PT") ?? "",
+        phones: [...administrator.phoneNumbers].sort(),
+      });
+      const sourceKey = createHash("sha256").update(identity).digest("hex");
       administratorRows.set(clientId + ":" + sourceKey, {
         client_id: clientId,
         source_key: sourceKey,
