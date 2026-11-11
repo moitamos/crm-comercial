@@ -34,19 +34,15 @@ function pageHref(page: number, perPage: number, query: string, packageFilter: s
 
 function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-      <p className="text-[10px] font-medium text-slate-500">{label}</p>
-      <p className="mt-0.5 text-base font-semibold tabular-nums text-slate-900">{value.toLocaleString("pt-PT")}</p>
-    </div>
-  );
-}
-
-function ClientCountMetric({ value }: { value: number }) {
-  return (
-    <div className="inline-flex self-start items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm">
-      <span className="text-[11px] font-medium text-slate-500">Clientes</span>
-      <span className="text-xs text-slate-400">-</span>
-      <span className="text-[13px] font-semibold tabular-nums text-slate-900">{value.toLocaleString("pt-PT")}</span>
+    <div
+      title={label}
+      className="flex w-full min-w-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm"
+    >
+      <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-slate-500">{label}</span>
+      <span className="shrink-0 text-xs text-slate-400">-</span>
+      <span className="shrink-0 text-[13px] font-semibold tabular-nums text-slate-900">
+        {value.toLocaleString("pt-PT")}
+      </span>
     </div>
   );
 }
@@ -215,7 +211,7 @@ export default async function ClientsPage({ searchParams }: Props) {
       </div>
 
       <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-5">
-        <ClientCountMetric value={portfolioClients} />
+        <Metric label="Clientes" value={portfolioClients} />
         <Metric label="MxO's · M4/M5/Sport Office 4/5" value={mxoCount} />
         <Metric label="M Móveis" value={mobileCount} />
         <Metric label="GCP's" value={gcpCount} />
