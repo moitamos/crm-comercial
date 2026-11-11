@@ -5,6 +5,9 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { FormActionState } from "@/lib/crm/types";
 
+function isValidPhone(value: string | null) { return !value || /^\+?[0-9]+$/.test(value); }
+function isValidEmail(value: string | null) { return !value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value); }
+
 async function getActiveUser() {
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getClaims();
@@ -33,7 +36,8 @@ export async function createClientAction(_previous: FormActionState, formData: F
   const nif = String(formData.get("nif") ?? "").replace(/\D/g, "");
   const nic = String(formData.get("nic") ?? "").trim() || null;
   const ncc = String(formData.get("ncc") ?? "").trim() || null;
-  const phone = String(formData.get("phone") ?? "").trim() || null;
+  const rawPhone = String(formData.get("phone") ?? "").trim();
+  const phone = rawPhone ? rawPhone.replace(/[\s().-]/g, "") : null;
   const email = String(formData.get("email") ?? "").trim().toLowerCase() || null;
   const address = String(formData.get("address") ?? "").trim() || null;
   const notes = String(formData.get("notes") ?? "").trim() || null;
@@ -42,6 +46,8 @@ export async function createClientAction(_previous: FormActionState, formData: F
   if (!fullName || fullName.length > 200) return { error: "Indica o nome do cliente (máximo 200 caracteres)." };
   if (!/^\d{9}$/.test(nif)) return { error: "O NIF tem de conter exatamente 9 algarismos." };
   if (!portfolioId) return { error: "Seleciona uma carteira." };
+  if (phone && !isValidPhone(phone)) return { error: "O telefone deve conter apenas algarismos e, opcionalmente, o prefixo +." };
+  if (!isValidEmail(email)) return { error: "Indica um email válido." };
 
   const { data: membership, error: membershipError } = await context.supabase
     .from("portfolio_members")
@@ -93,6 +99,8 @@ export async function updateClientAction(_previous: FormActionState, formData: F
 
   if (!clientId) return { error: "Cliente inválido." };
   if (!fullName || fullName.length > 200) return { error: "Indica o nome do cliente (máximo 200 caracteres)." };
+  if (phone && !isValidPhone(phone)) return { error: "O telefone deve conter apenas algarismos e, opcionalmente, o prefixo +." };
+  if (!isValidEmail(email)) return { error: "Indica um email válido." };
 
   const { error } = await context.supabase
     .from("clients")
