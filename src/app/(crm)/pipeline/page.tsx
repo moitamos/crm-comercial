@@ -38,6 +38,21 @@ const DEAL_TYPES = [
 ];
 const PAGE_SIZE = 30;
 
+async function loadChunks<T>(
+  ids: string[],
+  loader: (batch: string[]) => Promise<{ data: T[] | null; error: { message: string } | null }>
+) {
+  const batches: string[][] = [];
+  for (let offset = 0; offset < ids.length; offset += 80) {
+    batches.push(ids.slice(offset, offset + 80));
+  }
+  const results = await Promise.all(batches.map(loader));
+  return {
+    data: results.flatMap((result) => result.data ?? []),
+    error: results.find((result) => result.error)?.error ?? null,
+  };
+}
+
 function positiveInteger(value: string | undefined, fallback: number) {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
@@ -98,21 +113,23 @@ export default async function PipelinePage({ searchParams }: Props) {
   const allDeals = (dealsResult.data ?? []) as DealRow[];
   const dealIds = allDeals.map((deal) => deal.id);
   const clientIds = Array.from(new Set(allDeals.map((deal) => deal.client_id)));
-  const [clientsResult, dealServicesResult] = dealIds.length
-    ? await Promise.all([
-      supabase.from("clients").select("id, full_name, nif").in("id", clientIds),
-      supabase.from("deal_services").select("id, deal_id, service_id, decision, future_package").in("deal_id", dealIds),
-    ])
-    : [{ data: [], error: null }, { data: [], error: null }];
+  const [clientsResult, dealServicesResult] = await Promise.all([
+    loadChunks<ClientRow>(clientIds, async (batch) =>
+      await supabase.from("clients").select("id, full_name, nif").in("id", batch)
+    ),
+    loadChunks<DealServiceRow>(dealIds, async (batch) =>
+      await supabase.from("deal_services").select("id, deal_id, service_id, decision, future_package").in("deal_id", batch)
+    ),
+  ]);
 
-  const dealServices = (dealServicesResult.data ?? []) as DealServiceRow[];
+  const dealServices = dealServicesResult.data;
   const serviceIds = Array.from(new Set(dealServices.map((item) => item.service_id)));
-  const servicesResult = serviceIds.length
-    ? await supabase.from("services").select("id, service_number, service_type, package_name").in("id", serviceIds)
-    : { data: [], error: null };
+  const servicesResult = await loadChunks<ServiceRow>(serviceIds, async (batch) =>
+    await supabase.from("services").select("id, service_number, service_type, package_name").in("id", batch)
+  );
 
-  const clients = new Map(((clientsResult.data ?? []) as ClientRow[]).map((client) => [client.id, client]));
-  const services = new Map(((servicesResult.data ?? []) as ServiceRow[]).map((service) => [service.id, service]));
+  const clients = new Map(clientsResult.data.map((client) => [client.id, client]));
+  const services = new Map(servicesResult.data.map((service) => [service.id, service]));
   const servicesByDeal = new Map<string, ServiceRow[]>();
   for (const link of dealServices) {
     const service = services.get(link.service_id);
