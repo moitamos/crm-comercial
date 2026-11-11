@@ -28,7 +28,7 @@ export default async function ImportPage() {
         <div>
           <p className="text-sm text-slate-500">Carregamento de dados</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">Importar clientes e serviços</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Importa qualquer folha Excel .xlsx. O CRM tenta reconhecer os cabeçalhos, propõe a correspondência com os campos do CRM e deixa-te confirmar ou corrigir antes de importar.</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Importa ficheiros .csv, .xls e .xlsx. O CRM reconhece cabeçalhos, propõe a correspondência e permite confirmar antes de importar; também reconhece a extração PIU com várias folhas.</p>
         </div>
         <a href="/api/import/template" className="inline-flex w-fit items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
           <Download size={16} /> Descarregar modelo Excel
@@ -36,8 +36,8 @@ export default async function ImportPage() {
       </div>
       <section className="rounded-2xl border border-blue-100 bg-blue-50/60 p-5">
         <div className="flex items-center gap-2 text-sm font-semibold text-blue-950"><FileSpreadsheet size={17} /> Campos que o CRM tenta reconhecer</div>
-        <p className="mt-2 text-sm leading-6 text-blue-900/80">Nome · NIF · NIC · NCC · Telefone · Email · Morada · N.º de serviço · Serviço / pacote · Fim de fidelização</p>
-        <p className="mt-2 text-xs leading-5 text-blue-900/70">Os nomes das colunas podem ser diferentes dos exemplos. Antes da importação podes confirmar e alterar as associações sugeridas. Cada linha deve representar um serviço; vários serviços com o mesmo NIF são agrupados no mesmo cliente.</p>
+        <p className="mt-2 text-sm leading-6 text-blue-900/80">Nome · NIF · NIC · NCC · Telefone · Email · Morada · N.º de serviço · Serviço / pacote · Data de fim de fidelização · Data conclusão</p>
+        <p className="mt-2 text-xs leading-5 text-blue-900/70">Os nomes das colunas podem ser diferentes dos exemplos. Antes da importação podes confirmar e alterar as associações sugeridas. O mesmo cliente pode ter vários serviços, associados pelo NIF, e também é possível importar um cliente sem serviço. Quando existe “Data conclusão”, essa data é considerada o início da fidelização em vigor e o CRM soma 24 meses para calcular o novo fim de fidelização; o funil é atualizado no final da importação.</p>
       </section>
       <ExcelImportForm portfolios={portfolios ?? []} />
     </main>
