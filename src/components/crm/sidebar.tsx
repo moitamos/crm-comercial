@@ -40,7 +40,7 @@ export function CrmSidebar() {
         {links.map((item) => {
           const Icon = item.icon;
           const active = pathname === item.href || pathname.startsWith(item.href + "/");
-          const disabled = ["/pipeline", "/agenda", "/results"].includes(item.href);
+          const disabled = ["/agenda", "/results"].includes(item.href);
 
           if (disabled) {
             return (
