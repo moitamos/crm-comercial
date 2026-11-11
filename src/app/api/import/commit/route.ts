@@ -300,11 +300,24 @@ export async function POST(request: Request) {
       .select("id, client_id, service_number");
 
     if (upsertedServices.error) {
+      const databaseError = upsertedServices.error;
+      const details = [databaseError.code, databaseError.message].filter(Boolean).join(" — ").slice(0, 500);
       await supabase.from("import_batches").update({
-        rows_rejected: rows.length,
-        summary: { clients_created: clientsCreated, error: "Falha ao gravar serviços." },
+        rows_imported: clientsCreated,
+        rows_rejected: validationRejections.length + unavailableClientRows,
+        summary: {
+          clients_created: clientsCreated,
+          services_pending: serviceRows.length,
+          error: "Falha ao gravar serviços.",
+          error_code: databaseError.code ?? null,
+          error_detail: databaseError.message.slice(0, 500),
+        },
       }).eq("id", batchId);
-      return NextResponse.json({ error: "Os clientes foram criados, mas ocorreu um erro ao gravar os serviços. A importação ficou registada para análise." }, { status: 500 });
+      console.error("[CRM_IMPORT_SERVICES]", { batchId, code: databaseError.code, message: databaseError.message });
+      return NextResponse.json({
+        error: "Os clientes foram criados, mas ocorreu um erro ao gravar os serviços. As fichas foram preservadas.",
+        details: details || "Erro de base de dados sem detalhe adicional.",
+      }, { status: 500 });
     }
 
     servicesUpdated = serviceRows.filter((row) => existingByKey.has(row.client_id + ":" + row.service_number)).length;
