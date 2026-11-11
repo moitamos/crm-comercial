@@ -3,34 +3,66 @@ import { Search, UserPlus, Upload, Users } from "lucide-react";
 import { ClientDetailsButton } from "@/components/crm/client-details-button";
 import { createClient } from "@/lib/supabase/server";
 
-type Props = { searchParams: Promise<{ q?: string }> };
+type Props = { searchParams: Promise<{ q?: string; page?: string; perPage?: string }> };
 
 function safeSearch(value: string) {
   return value.replace(/[^a-zA-Z0-9À-ÿ .@_-]/g, " ").trim().slice(0, 60);
 }
 
+function positiveInteger(value: string | undefined, fallback: number) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function pageHref(page: number, perPage: number, query: string) {
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  params.set("perPage", String(perPage));
+  params.set("page", String(page));
+  return "/clients?" + params.toString();
+}
+
 export default async function ClientsPage({ searchParams }: Props) {
   const params = await searchParams;
   const query = safeSearch(params.q ?? "");
+  const requestedPerPage = positiveInteger(params.perPage, 20);
+  const perPage = [20, 50, 100].includes(requestedPerPage) ? requestedPerPage : 20;
+  let currentPage = positiveInteger(params.page, 1);
   const supabase = await createClient();
 
-  let request = supabase
-    .from("clients")
-    .select("id, full_name, nif, nic, ncc, phone, email, created_at, services(id, service_number, service_type, package_name, loyalty_end_date, is_active)", { count: "exact" })
-    .order("full_name", { ascending: true })
-    .limit(100);
+  async function loadPage(page: number) {
+    let request = supabase
+      .from("clients")
+      .select("id, full_name, nif, nic, ncc, phone, email, created_at, services(id, service_number, service_type, package_name, loyalty_end_date, is_active)", { count: "exact" })
+      .order("full_name", { ascending: true })
+      .range((page - 1) * perPage, page * perPage - 1);
 
-  if (query) {
-    const term = "%" + query + "%";
-    request = request.or(
-      "full_name.ilike." + term +
-      ",nif.ilike." + term +
-      ",nic.ilike." + term +
-      ",ncc.ilike." + term
-    );
+    if (query) {
+      const term = "%" + query + "%";
+      request = request.or(
+        "full_name.ilike." + term +
+        ",nif.ilike." + term +
+        ",nic.ilike." + term +
+        ",ncc.ilike." + term
+      );
+    }
+    return request;
   }
 
-  const { data: clients, error, count } = await request;
+  let { data: clients, error, count } = await loadPage(currentPage);
+  const totalCount = count ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / perPage));
+
+  if (!error && totalCount > 0 && currentPage > totalPages) {
+    currentPage = totalPages;
+    const lastPage = await loadPage(currentPage);
+    clients = lastPage.data;
+    error = lastPage.error;
+    count = lastPage.count;
+  }
+
+  const firstResult = totalCount === 0 ? 0 : (currentPage - 1) * perPage + 1;
+  const lastResult = Math.min(currentPage * perPage, totalCount);
 
   return (
     <main className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-7">
@@ -38,7 +70,7 @@ export default async function ClientsPage({ searchParams }: Props) {
         <div>
           <p className="text-sm text-slate-500">Carteira comercial</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">Clientes</h1>
-          <p className="mt-2 text-sm text-slate-500">{count ?? 0} clientes encontrados</p>
+          <p className="mt-2 text-sm text-slate-500">{totalCount.toLocaleString("pt-PT")} clientes encontrados</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/import" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
@@ -52,13 +84,15 @@ export default async function ClientsPage({ searchParams }: Props) {
 
       <form method="get" className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:flex-row">
         <label htmlFor="q" className="sr-only">Pesquisar clientes</label>
+        <input type="hidden" name="page" value="1" />
+        <input type="hidden" name="perPage" value={String(perPage)} />
         <div className="flex min-w-0 flex-1 items-center gap-2 px-2">
           <Search size={18} className="shrink-0 text-slate-400" />
           <input id="q" name="q" defaultValue={query} placeholder="Pesquisar por nome, NIF, N.º cliente ou N.º conta"
             className="w-full border-0 bg-transparent py-2.5 text-sm outline-none placeholder:text-slate-400" />
         </div>
         <button type="submit" className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">Pesquisar</button>
-        {query && <Link href="/clients" className="rounded-xl px-4 py-2.5 text-center text-sm font-medium text-slate-500 hover:bg-slate-50">Limpar</Link>}
+        {query && <Link href={pageHref(1, perPage, "")} className="rounded-xl px-4 py-2.5 text-center text-sm font-medium text-slate-500 hover:bg-slate-50">Limpar</Link>}
       </form>
 
       {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">Não foi possível consultar a carteira. Confirma as permissões e tenta novamente.</div>}
@@ -73,7 +107,7 @@ export default async function ClientsPage({ searchParams }: Props) {
             </p>
             {!query && <div className="mt-5 flex flex-wrap justify-center gap-2">
               <Link href="/clients/new" className="rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800">Adicionar cliente</Link>
-              <Link href="/import" className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Importar Excel</Link>
+              <Link href="/import" className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Importar ficheiro</Link>
             </div>}
           </div>
         ) : (
@@ -83,9 +117,9 @@ export default async function ClientsPage({ searchParams }: Props) {
                 <tr>
                   <th className="px-5 py-4 font-semibold">Cliente</th>
                   <th className="px-5 py-4 font-semibold">NIF</th>
-                  <th className="px-5 py-4 font-semibold text-center">MEO</th>
-                  <th className="px-5 py-4 font-semibold text-center">M Móvel</th>
-                  <th className="px-5 py-4 font-semibold text-center">GCP</th>
+                  <th className="px-5 py-4 text-center font-semibold">MEO</th>
+                  <th className="px-5 py-4 text-center font-semibold">M Móvel</th>
+                  <th className="px-5 py-4 text-center font-semibold">GCP</th>
                   <th className="px-5 py-4 font-semibold"><span className="sr-only">Abrir</span></th>
                 </tr>
               </thead>
@@ -116,7 +150,39 @@ export default async function ClientsPage({ searchParams }: Props) {
           </div>
         )}
       </section>
-      {(count ?? 0) > 100 && <p className="text-xs text-slate-500">A mostrar os primeiros 100 resultados. Usa a pesquisa para encontrares outros clientes.</p>}
+
+      <div className="flex flex-col justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center">
+        <div>
+          <p className="text-sm font-medium text-slate-700">A mostrar {firstResult.toLocaleString("pt-PT")}–{lastResult.toLocaleString("pt-PT")} de {totalCount.toLocaleString("pt-PT")} clientes</p>
+          <p className="mt-1 text-xs text-slate-400">Página {currentPage} de {totalPages}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <form method="get" className="flex items-center gap-2">
+            {query && <input type="hidden" name="q" value={query} />}
+            <input type="hidden" name="page" value="1" />
+            <label htmlFor="perPage" className="text-xs font-medium text-slate-500">Por página</label>
+            <select id="perPage" name="perPage" defaultValue={String(perPage)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
+              <option value="20">20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+            <button type="submit" className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">Aplicar</button>
+          </form>
+          <nav aria-label="Paginação de clientes" className="flex items-center gap-2">
+            {currentPage > 1 ? (
+              <Link href={pageHref(currentPage - 1, perPage, query)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Anterior</Link>
+            ) : (
+              <span className="rounded-lg border border-slate-100 px-3 py-2 text-sm text-slate-300">Anterior</span>
+            )}
+            {currentPage < totalPages ? (
+              <Link href={pageHref(currentPage + 1, perPage, query)} className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800">Seguinte</Link>
+            ) : (
+              <span className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-400">Seguinte</span>
+            )}
+          </nav>
+        </div>
+      </div>
     </main>
   );
 }
