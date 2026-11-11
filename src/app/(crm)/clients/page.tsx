@@ -92,9 +92,9 @@ export default async function ClientsPage({ searchParams }: Props) {
               <tbody className="divide-y divide-slate-100">
                 {(clients ?? []).map((client) => {
                   const services = client.services ?? [];
-                  const meoCount = services.filter((service) => service.service_type === "meo").length;
-                  const mobileCount = services.filter((service) => service.service_type === "mobile").length;
-                  const gcpCount = services.filter((service) => service.service_type === "gcp").length;
+                  const meoCount = services.filter((service) => service.is_active && service.service_type === "meo").length;
+                  const mobileCount = services.filter((service) => service.is_active && service.service_type === "mobile").length;
+                  const gcpCount = services.filter((service) => service.is_active && service.service_type === "gcp").length;
                   return (
                     <tr key={client.id} className="transition hover:bg-slate-50/70">
                       <td className="px-5 py-4">
