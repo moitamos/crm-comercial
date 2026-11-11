@@ -422,7 +422,7 @@ function buildPiuRows(sheets: RawSheet[]): ImportRow[] {
     const nifColumn = headerMap.nif ? headerMap.nif - 1 : null;
     const nameColumn = headerMap.fullName ? headerMap.fullName - 1 : null;
     const nicColumn = headerMap.nic ? headerMap.nic - 1 : null;
-    const nccColumn = headerMap.ncc ? headerMap.ncc - 1 : null;
+    let nccColumn = headerMap.ncc ? headerMap.ncc - 1 : null;
 
     let serviceColumn: number | null = null;
     let packageColumn: number | null = null;
