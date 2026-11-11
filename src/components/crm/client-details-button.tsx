@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ChevronDown, Mail, Phone, UserRound, X } from "lucide-react";
+import { getServicePackageLabel } from "@/lib/crm/packages";
 
 type SourceRow = Record<string, string | null>;
 type Service = {
@@ -30,12 +31,11 @@ type ClientDetails = {
     phone: string | null; email: string | null; address: string | null; notes: string | null; created_at: string;
   };
   services: Service[];
-  importDetails: Array<{ source_system: string; source_data: SourceRow[] | SourceRow; updated_at: string }>;
   administrators: Administrator[];
 };
 type ErrorPayload = { error: string };
 
-function sourceRows(value: Service["source_data"] | ClientDetails["importDetails"][number]["source_data"] | Administrator["source_data"]): SourceRow[] {
+function sourceRows(value: Service["source_data"] | Administrator["source_data"]): SourceRow[] {
   if (!value) return [];
   return Array.isArray(value) ? value : [value as SourceRow];
 }
@@ -117,7 +117,11 @@ export function ClientDetailsButton({ clientId, clientName }: { clientId: string
 
   const client = details?.client;
   const services = details?.services ?? [];
-  const importRows = details?.importDetails.flatMap((item) => sourceRows(item.source_data)) ?? [];
+  const administrators = details?.administrators ?? [];
+  const administratorPhones = Array.from(new Set(administrators.flatMap((item) => item.phone_numbers ?? []).map((item) => item.trim()).filter(Boolean)));
+  const administratorEmails = Array.from(new Set(administrators.map((item) => item.email?.trim()).filter((item): item is string => Boolean(item))));
+  const contactPhones = client?.phone ? [client.phone] : administratorPhones;
+  const contactEmails = client?.email ? [client.email] : administratorEmails;
 
   return (
     <>
@@ -156,8 +160,20 @@ export function ClientDetailsButton({ clientId, clientName }: { clientId: string
                       <div><p className="text-[11px] uppercase tracking-wide text-slate-400">NIF</p><p className="mt-1 font-mono text-sm text-slate-800">{client.nif}</p></div>
                       <div><p className="text-[11px] uppercase tracking-wide text-slate-400">NIC</p><p className="mt-1 text-sm text-slate-800">{client.nic ?? "—"}</p></div>
                       <div><p className="text-[11px] uppercase tracking-wide text-slate-400">NCC</p><p className="mt-1 text-sm text-slate-800">{client.ncc ?? "—"}</p></div>
-                      <div><p className="text-[11px] uppercase tracking-wide text-slate-400">Telefone do cliente</p><p className="mt-1 text-sm text-slate-800">{client.phone ?? "—"}</p></div>
-                      <div><p className="text-[11px] uppercase tracking-wide text-slate-400">Email do cliente</p><p className="mt-1 break-all text-sm text-slate-800">{client.email ?? "—"}</p></div>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wide text-slate-400">Telemóvel</p>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {contactPhones.length ? contactPhones.map((phone) => <a key={phone} href={"tel:" + phone} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-sm text-blue-700 ring-1 ring-slate-200 hover:bg-blue-50"><Phone size={13} />{phone}</a>) : <span className="text-sm text-slate-500">—</span>}
+                        </div>
+                        {!client.phone && contactPhones.length > 0 && <p className="mt-1 text-[10px] text-slate-400">Contacto de administrador associado</p>}
+                      </div>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wide text-slate-400">Email</p>
+                        <div className="mt-1 flex flex-col items-start gap-1.5">
+                          {contactEmails.length ? contactEmails.map((email) => <a key={email} href={"mailto:" + email} className="inline-flex max-w-full items-center gap-1.5 break-all text-sm text-blue-700 hover:underline"><Mail size={13} className="shrink-0" />{email}</a>) : <span className="text-sm text-slate-500">—</span>}
+                        </div>
+                        {!client.email && contactEmails.length > 0 && <p className="mt-1 text-[10px] text-slate-400">Contacto de administrador associado</p>}
+                      </div>
                       {client.address && <div className="sm:col-span-2 lg:col-span-3"><p className="text-[11px] uppercase tracking-wide text-slate-400">Morada</p><p className="mt-1 text-sm text-slate-800">{client.address}</p></div>}
                     </div>
                   </section>
@@ -173,9 +189,7 @@ export function ClientDetailsButton({ clientId, clientName }: { clientId: string
                       <div className="mt-3 space-y-3">
                         {services.map((service) => {
                           const rows = sourceRows(service.source_data);
-                          const tariff = service.package_name
-                            || valueFrom(rows, ["Tarifário", "Oferta Comercial", "Pacote Base", "OFERTA"]);
-                          const secondary = valueFrom(rows, ["Pacote Base", "Grupo Oferta", "OFERTA", "PERIODO_REFID"]);
+                          const packageLabel = getServicePackageLabel(service) ?? "Pacote não indicado";
                           const state = valueFrom(rows, ["Estado Fid. Pacote", "Estado Fidelização", "Estado Fidelização Cartões", "PERIODO_REFID"]);
                           const campaigns = [...new Set(rows.map((row) => row["Tipo de Campanha"]).filter((value): value is string => Boolean(value)))];
                           return (
@@ -186,14 +200,13 @@ export function ClientDetailsButton({ clientId, clientName }: { clientId: string
                                   <span className="font-mono text-sm font-semibold text-slate-800">{service.service_number}</span>
                                   <span className={"rounded-full px-2.5 py-1 text-[11px] font-medium " + (service.is_active ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600")}>{service.is_active ? "Ativo" : "Inativo"}</span>
                                 </div>
-                                <div className="text-sm font-semibold text-slate-800">{tariff ?? "Tarifário não indicado"}</div>
+                                <div className="text-sm font-semibold text-slate-800">{packageLabel}</div>
                               </div>
                               <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
                                 <div><p className="text-[11px] uppercase tracking-wide text-slate-400">Fim fidelização atual</p><p className="mt-1 text-sm font-medium text-slate-800">{dateLabel(service.loyalty_end_date)}</p></div>
                                 <div><p className="text-[11px] uppercase tracking-wide text-slate-400">Data conclusão</p><p className="mt-1 text-sm text-slate-800">{dateLabel(service.loyalty_conclusion_date)}</p></div>
                                 <div><p className="text-[11px] uppercase tracking-wide text-slate-400">Estado fidelização</p><p className="mt-1 text-sm text-slate-800">{state ?? "Não indicado"}</p></div>
                                 <div><p className="text-[11px] uppercase tracking-wide text-slate-400">Mensalidade</p><p className="mt-1 text-sm text-slate-800">{moneyLabel(service.current_monthly_fee) ?? "—"}</p></div>
-                                {secondary && <div className="sm:col-span-2 lg:col-span-4"><p className="text-[11px] uppercase tracking-wide text-slate-400">Pacote / grupo / oferta</p><p className="mt-1 text-sm text-slate-800">{secondary}</p></div>}
                                 {campaigns.length > 0 && <div className="sm:col-span-2 lg:col-span-4"><p className="text-[11px] uppercase tracking-wide text-slate-400">Tipo de campanha</p><div className="mt-1 flex flex-wrap gap-2">{campaigns.map((item) => <span key={item} className="rounded-full bg-violet-50 px-2.5 py-1 text-xs text-violet-800">{item}</span>)}</div></div>}
                               </div>
                               {rows.length > 0 && (
@@ -237,16 +250,6 @@ export function ClientDetailsButton({ clientId, clientName }: { clientId: string
                       </div>
                     )}
                   </section>
-
-                  {importRows.length > 0 && (
-                    <section>
-                      <h3 className="text-sm font-semibold text-slate-900">Informação adicional da folha Clientes</h3>
-                      <p className="mt-1 text-xs text-slate-500">Inclui os dados de segmentação, estado PIU, alertas, dívida e restantes campos presentes no Excel.</p>
-                      <div className="mt-3 space-y-3">
-                        {importRows.map((row, index) => <div key={index} className="rounded-xl border border-slate-200 bg-slate-50 p-4"><DataGrid data={row} /></div>)}
-                      </div>
-                    </section>
-                  )}
 
                   {client.notes && <section><h3 className="text-sm font-semibold text-slate-900">Notas internas</h3><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{client.notes}</p></section>}
                   <p className="text-[11px] text-slate-400">Ficha criada em {dateLabel(client.created_at.slice(0, 10))}</p>
