@@ -381,7 +381,6 @@ function buildPiuRows(sheets: RawSheet[]): ImportRow[] {
   const clientsSheet = sheets.find((sheet) => norm(sheet.name) === "clientes");
   if (!clientsSheet) return [];
   const clientHeader = bestHeader(clientsSheet);
-  const clientColumns = clientHeader.headers;
   const clientMapping = clientHeader.mapping;
   const clients = new Map<string, ImportRow>();
 
@@ -452,15 +451,16 @@ function buildPiuRows(sheets: RawSheet[]): ImportRow[] {
       } else {
         const packageText = cellText(valueAt(source, packageColumn));
         const serviceLabel = sheetName === "cartoesmoveis" ? cellText(valueAt(source, headerIndex(headers, ["Serviço"]))) : "";
-        row.packageName = packageCode(serviceText || serviceLabel);
+        row.packageName = packageCode(serviceLabel || packageText);
       }
 
-      const rawEndDate = valueAt(source, endDateColumn);
+        const rawEndDate = valueAt(source, endDateColumn);
       const rawConclusionDate = valueAt(source, conclusionDateColumn);
-      row.loyaltyEndDate = dateIso(rawEndDate);
+      const parsedEndDate = dateIso(rawEndDate);
       row.loyaltyConclusionDate = dateIso(rawConclusionDate);
+      row.loyaltyEndDate = parsedEndDate || (row.loyaltyConclusionDate ? addMonths(row.loyaltyConclusionDate, 24) : null);
       if (!row.loyaltyEndDate && row.loyaltyConclusionDate) row.loyaltyEndDate = addMonths(row.loyaltyConclusionDate, 24);
-      if (rawEndDate !== null && rawEndDate !== undefined && rawEndDate !== "" && !row.loyaltyEndDate) {
+      if (rawEndDate !== null && rawEndDate !== undefined && rawEndDate !== "" && !parsedEndDate) {
         row.errors.push("Data de fim de fidelização inválida.");
       }
       if (rawConclusionDate !== null && rawConclusionDate !== undefined && rawConclusionDate !== "" && !row.loyaltyConclusionDate) {
@@ -565,9 +565,9 @@ export async function parseWorkbook(
     row.packageName = packageCode(cellText(value("packageName")));
     const rawEndDate = value("loyaltyEndDate");
     const rawConclusionDate = value("loyaltyConclusionDate");
-    row.loyaltyEndDate = dateIso(rawEndDate);
+    const parsedEndDate = dateIso(rawEndDate);
     row.loyaltyConclusionDate = dateIso(rawConclusionDate);
-    if (!row.loyaltyEndDate && row.loyaltyConclusionDate) row.loyaltyEndDate = addMonths(row.loyaltyConclusionDate, 24);
+    row.loyaltyEndDate = parsedEndDate || (row.loyaltyConclusionDate ? addMonths(row.loyaltyConclusionDate, 24) : null);
 
     if (!fullName && !nif && !serviceNumber && !row.nic && !row.ncc && !row.phone && !row.email && !row.address) continue;
     if (!fullName) row.errors.push("Nome em falta.");
@@ -575,7 +575,7 @@ export async function parseWorkbook(
     if (serviceNumber && serviceNumber.length > 100) row.errors.push("N.º serviço demasiado longo.");
     if (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) row.errors.push("Email inválido.");
     if (row.phone && !/^\+?[0-9]+$/.test(row.phone)) row.errors.push("Telefone inválido.");
-    if (rawEndDate !== null && rawEndDate !== undefined && rawEndDate !== "" && !row.loyaltyEndDate) {
+    if (rawEndDate !== null && rawEndDate !== undefined && rawEndDate !== "" && !parsedEndDate) {
       row.errors.push("Data de fim de fidelização inválida.");
     }
     if (rawConclusionDate !== null && rawConclusionDate !== undefined && rawConclusionDate !== "" && !row.loyaltyConclusionDate) {
