@@ -79,9 +79,10 @@ function packageCode(value: string): string | null {
   return raw.slice(0, 60);
 }
 
-export async function parseWorkbook(buffer: Buffer): Promise<WorkbookPreview> {
+export async function parseWorkbook(buffer: Uint8Array): Promise<WorkbookPreview> {
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
+  const excelBuffer = Buffer.from(buffer);
+  await workbook.xlsx.load(excelBuffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
   const sheet = workbook.worksheets[0];
   if (!sheet) return { rows: [], rowCount: 0, errors: ["O ficheiro não contém nenhuma folha de cálculo."] };
 
