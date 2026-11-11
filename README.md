@@ -51,17 +51,24 @@ npm run build
 ## Segurança / RGPD
 Não introduzir dados reais de clientes até estar confirmada a autorização da empresa, a base legal, a política de retenção e o controlo de acesso. Ativar MFA na conta Supabase/Vercel e usar palavras-passe fortes.
 
-## Gestão de clientes e importação Excel
+## Gestão de clientes e importação de ficheiros
 
 - Consulta da carteira com pesquisa por nome, NIF, NIC e NCC.
 - Ficha individual com serviços e datas de fidelização.
-- Criação e edição de dados de contacto do cliente.
-- Importação de ficheiros `.xlsx` com pré-visualização, validação de NIF e controlo de duplicados.
+- Importação de ficheiros `.csv`, `.xls` (Excel 97–2003/BIFF8) e `.xlsx`, com pré-visualização e validação.
+- O importador sugere automaticamente a correspondência entre os cabeçalhos e os campos do CRM; é possível rever ou corrigir o mapeamento.
+- O número de serviço é opcional para permitir criar clientes sem serviços registados.
+- Vários serviços com o mesmo NIF são agrupados na mesma ficha. O número de serviço é a chave de deduplicação; repetições do mesmo serviço são consolidadas em vez de bloquearem a importação.
+- NIF é globalmente único. Um cliente que já pertença a outra carteira não é duplicado nem transferido.
 - Modelo Excel disponível em `/api/import/template`.
-- Colunas: Nome, NIF, N cliente, N conta, N serviço, Data fidelização e Serviço.
-- Cada linha representa um serviço. Linhas com o mesmo NIF são agrupadas num único cliente.
-- A importação não transfere clientes entre carteiras.
 
-### Correspondência automática de colunas Excel
+### Extração PIU multi-folha
 
-O importador analisa os cabeçalhos da folha, tenta identificar a linha de títulos (incluindo quando existe um título acima da tabela) e sugere automaticamente a correspondência com os campos do CRM. Antes da pré-visualização, o utilizador pode rever ou alterar cada associação. As associações obrigatórias são Nome, NIF e N.º de serviço; NIC, NCC, pacote, fim de fidelização, telefone, email e morada são opcionais.
+O ficheiro de exemplo PIU é reconhecido pelas folhas `Clientes`, `Refid MEO`, `Cartoes Moveis` e `GC Pack`. O CRM usa a folha de clientes para identificar o titular e associa os serviços das outras três folhas pelo NIF. As folhas de campanhas, faturação e administradores não são importadas nesta fase.
+
+### Regras de fidelização e funil
+
+- Se o ficheiro tiver uma coluna `Data conclusão`, esta é interpretada como a data de início da fidelização em vigor. O CRM calcula o novo fim de fidelização somando 24 meses de calendário.
+- Na ausência de `Data conclusão`, é usada a coluna de fim de fidelização já existente no ficheiro.
+- A oportunidade de renovação é elegível no primeiro dia do mês que começa 6 meses antes do fim de fidelização (controlo aos 18 meses).
+- No final da importação, o CRM atualiza imediatamente as oportunidades já elegíveis dos clientes atribuídos ao comercial autenticado. As restantes passam a ser criadas quando chegar o respetivo mês de elegibilidade, através da rotina diária.
