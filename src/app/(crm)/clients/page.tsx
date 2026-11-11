@@ -39,7 +39,6 @@ function Metric({ label, value }: { label: string; value: number }) {
       className="flex w-full min-w-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm"
     >
       <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-slate-500">{label}</span>
-      <span className="shrink-0 text-xs text-slate-400">-</span>
       <span className="shrink-0 text-[13px] font-semibold tabular-nums text-slate-900">
         {value.toLocaleString("pt-PT")}
       </span>
