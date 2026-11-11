@@ -123,7 +123,13 @@ function detectField(label: string): ImportField | null {
 }
 
 function parseCsv(input: Uint8Array): RawSheet[] {
-  const source = new TextDecoder("utf-8").decode(input).replace(/^\uFEFF/, "");
+  let source: string;
+  try {
+    source = new TextDecoder("utf-8", { fatal: true }).decode(input);
+  } catch {
+    source = new TextDecoder("windows-1252").decode(input);
+  }
+  source = source.replace(/^\uFEFF/, "");
   const firstLine = source.split(/\r?\n/, 1)[0] ?? "";
   const candidates = [",", ";", "\t"];
   let delimiter = ",";
@@ -465,7 +471,7 @@ function buildPiuRows(sheets: RawSheet[]): ImportRow[] {
       const parsedEndDate = dateIso(rawEndDate);
       row.loyaltyConclusionDate = dateIso(rawConclusionDate);
       row.loyaltyEndDate = row.loyaltyConclusionDate ? addMonths(row.loyaltyConclusionDate, 24) : parsedEndDate;
-      if (rawEndDate !== null && rawEndDate !== undefined && rawEndDate !== "" && !parsedEndDate) {
+      if (!row.loyaltyConclusionDate && rawEndDate !== null && rawEndDate !== undefined && rawEndDate !== "" && !parsedEndDate) {
         row.errors.push("Data de fim de fidelização inválida.");
       }
       if (rawConclusionDate !== null && rawConclusionDate !== undefined && rawConclusionDate !== "" && !row.loyaltyConclusionDate) {
@@ -534,6 +540,7 @@ export async function parseWorkbook(
   const sheets = await readWorkbook(buffer, fileName);
   if (isPiuExport(sheets)) {
     const imported = buildPiuRows(sheets);
+    if (imported.length > 1500) return { rows: [], rowCount: imported.length, errors: ["O ficheiro tem mais de 1500 registos de cliente/serviço. Divide-o antes de importar."] };
     if (!imported.length) return { rows: [], rowCount: 0, errors: ["Não encontrei clientes ou serviços com NIF válido nas folhas reconhecidas."] };
     const checked = validateAndConsolidate(imported);
     return { rows: checked.rows, rowCount: imported.length, errors: checked.warnings };
@@ -580,7 +587,7 @@ export async function parseWorkbook(
     if (serviceNumber && serviceNumber.length > 100) row.errors.push("N.º serviço demasiado longo.");
     if (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) row.errors.push("Email inválido.");
     if (row.phone && !/^\+?[0-9]+$/.test(row.phone)) row.errors.push("Telefone inválido.");
-    if (rawEndDate !== null && rawEndDate !== undefined && rawEndDate !== "" && !parsedEndDate) {
+    if (!row.loyaltyConclusionDate && rawEndDate !== null && rawEndDate !== undefined && rawEndDate !== "" && !parsedEndDate) {
       row.errors.push("Data de fim de fidelização inválida.");
     }
     if (rawConclusionDate !== null && rawConclusionDate !== undefined && rawConclusionDate !== "" && !row.loyaltyConclusionDate) {
