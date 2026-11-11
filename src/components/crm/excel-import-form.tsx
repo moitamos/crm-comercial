@@ -1,35 +1,102 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { CheckCircle2, FileSpreadsheet, Upload } from "lucide-react";
-import type { ImportRow } from "@/lib/crm/excel";
+import { CheckCircle2, FileSpreadsheet, RefreshCw, Upload } from "lucide-react";
+import type { ExcelColumn, ImportField, ImportMapping, ImportRow, WorkbookAnalysis } from "@/lib/crm/excel";
 
 type Portfolio = { id: string; name: string };
 type Preview = { fileName: string; rowCount: number; rows: ImportRow[]; warnings: string[] };
 type CommitResult = { success: true; clientsCreated: number; clientsReused: number; servicesCreated: number; servicesUpdated: number; rejectedRows: number };
 type ErrorResult = { error: string };
 
+const FIELD_OPTIONS: Array<{ key: ImportField; label: string; required?: boolean; hint: string }> = [
+  { key: "fullName", label: "Nome do cliente", required: true, hint: "Nome, cliente, titular..." },
+  { key: "nif", label: "NIF", required: true, hint: "NIF ou número de contribuinte" },
+  { key: "serviceNumber", label: "N.º de serviço", required: true, hint: "Identificador individual do serviço" },
+  { key: "nic", label: "N.º de cliente (NIC)", hint: "Número de cliente" },
+  { key: "ncc", label: "N.º de conta (NCC)", hint: "Número de conta" },
+  { key: "packageName", label: "Serviço / pacote", hint: "M5, M4, M3, M2, Móvel, GCP..." },
+  { key: "loyaltyEndDate", label: "Data de fim de fidelização", hint: "Data final do contrato" },
+  { key: "phone", label: "Telefone", hint: "Contacto telefónico" },
+  { key: "email", label: "Email", hint: "Endereço de email" },
+  { key: "address", label: "Morada", hint: "Morada do cliente" },
+];
+
+const EMPTY_MAPPING: ImportMapping = {
+  fullName: null, nif: null, nic: null, ncc: null, phone: null,
+  email: null, address: null, serviceNumber: null, loyaltyEndDate: null, packageName: null,
+};
+
 export function ExcelImportForm({ portfolios }: { portfolios: Portfolio[] }) {
+  const [analysis, setAnalysis] = useState<(WorkbookAnalysis & { fileName: string }) | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [mapping, setMapping] = useState<ImportMapping>(EMPTY_MAPPING);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [portfolioId, setPortfolioId] = useState(portfolios[0]?.id ?? "");
   const [result, setResult] = useState<CommitResult | null>(null);
 
-  async function handlePreview(event: FormEvent<HTMLFormElement>) {
+  async function handleAnalyze(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setResult(null);
     setPreview(null);
+    setAnalysis(null);
+    setMapping(EMPTY_MAPPING);
     setBusy(true);
+
+    const formData = new FormData(event.currentTarget);
+    const selected = formData.get("file");
+    if (!(selected instanceof File) || selected.size === 0) {
+      setBusy(false);
+      setError("Seleciona um ficheiro Excel.");
+      return;
+    }
+    setSelectedFile(selected);
+
     try {
-      const form = new FormData(event.currentTarget);
-      const response = await fetch("/api/import/preview", { method: "POST", body: form });
+      const response = await fetch("/api/import/analyze", { method: "POST", body: formData });
+      const payload = await response.json() as (WorkbookAnalysis & { fileName: string }) & ErrorResult;
+      if (!response.ok) throw new Error(payload.error || "Não foi possível analisar o Excel.");
+      setAnalysis(payload);
+      setMapping(payload.suggestedMapping);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Erro ao analisar o ficheiro.");
+      setSelectedFile(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function updateMapping(field: ImportField, value: string) {
+    setMapping((previous) => ({ ...previous, [field]: value ? Number(value) : null }));
+    setPreview(null);
+  }
+
+  function resetMapping() {
+    if (analysis) {
+      setMapping(analysis.suggestedMapping);
+      setPreview(null);
+    }
+  }
+
+  async function handlePreview() {
+    if (!analysis || !selectedFile) return;
+    setBusy(true);
+    setError("");
+    setPreview(null);
+    try {
+      const formData = new FormData();
+      formData.set("file", selectedFile);
+      formData.set("headerRow", String(analysis.headerRow));
+      formData.set("mapping", JSON.stringify(mapping));
+      const response = await fetch("/api/import/preview", { method: "POST", body: formData });
       const payload = await response.json() as Preview & ErrorResult;
-      if (!response.ok) throw new Error(payload.error || "Não foi possível ler o Excel.");
+      if (!response.ok) throw new Error(payload.error || "Não foi possível validar as linhas.");
       setPreview(payload);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Erro ao ler o ficheiro.");
+      setError(reason instanceof Error ? reason.message : "Erro ao validar o Excel.");
     } finally {
       setBusy(false);
     }
@@ -50,6 +117,8 @@ export function ExcelImportForm({ portfolios }: { portfolios: Portfolio[] }) {
       if (!response.ok) throw new Error(payload.error || "Não foi possível concluir a importação.");
       setResult(payload);
       setPreview(null);
+      setAnalysis(null);
+      setSelectedFile(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Erro durante a importação.");
     } finally {
@@ -59,6 +128,9 @@ export function ExcelImportForm({ portfolios }: { portfolios: Portfolio[] }) {
 
   const validRows = preview?.rows.filter((row) => row.errors.length === 0) ?? [];
   const invalidRows = preview?.rows.length ? preview.rows.length - validRows.length : 0;
+  const mappedColumns = FIELD_OPTIONS.map((field) => mapping[field.key]).filter((value): value is number => value !== null);
+  const duplicateMapping = new Set(mappedColumns).size !== mappedColumns.length;
+  const missingRequired = FIELD_OPTIONS.filter((field) => field.required && mapping[field.key] === null);
 
   if (portfolios.length === 0) {
     return <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-900">
@@ -68,10 +140,13 @@ export function ExcelImportForm({ portfolios }: { portfolios: Portfolio[] }) {
 
   return (
     <div className="space-y-6">
-      <form onSubmit={handlePreview} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+      <form onSubmit={handleAnalyze} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
         <div className="flex items-center gap-3">
           <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700"><FileSpreadsheet size={22} /></span>
-          <div><h2 className="font-semibold text-slate-900">Selecionar ficheiro Excel</h2><p className="mt-1 text-xs text-slate-500">Formato .xlsx · máximo 10 MB · até 1500 linhas</p></div>
+          <div>
+            <h2 className="font-semibold text-slate-900">Selecionar ficheiro Excel</h2>
+            <p className="mt-1 text-xs text-slate-500">O CRM lê os cabeçalhos e sugere automaticamente as associações. .xlsx · máximo 10 MB · até 1500 linhas</p>
+          </div>
         </div>
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
           <div>
@@ -82,17 +157,96 @@ export function ExcelImportForm({ portfolios }: { portfolios: Portfolio[] }) {
             </select>
           </div>
           <div>
-            <label htmlFor="file" className="mb-2 block text-sm font-medium text-slate-700">Ficheiro .xlsx</label>
+            <label htmlFor="file" className="mb-2 block text-sm font-medium text-slate-700">Ficheiro Excel (.xlsx)</label>
             <input id="file" name="file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required
               className="block w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-slate-700" />
           </div>
         </div>
         <button type="submit" disabled={busy} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-blue-700 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60">
-          <Upload size={16} /> {busy ? "A analisar..." : "Pré-visualizar importação"}
+          <Upload size={16} /> {busy ? "A analisar cabeçalhos..." : "Analisar ficheiro"}
         </button>
       </form>
 
       {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
+
+      {analysis && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Análise automática concluída</p>
+              <h2 className="mt-1 font-semibold text-slate-900">Associar colunas do Excel ao CRM</h2>
+              <p className="mt-1 text-sm text-slate-500">{analysis.fileName} · folha “{analysis.sheetName}” · cabeçalhos na linha {analysis.headerRow}</p>
+            </div>
+            <button type="button" onClick={resetMapping} className="inline-flex w-fit items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+              <RefreshCw size={13} /> Repor sugestões automáticas
+            </button>
+          </div>
+
+          <div className="mt-5 rounded-xl bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-900">
+            Associei automaticamente as colunas cujos nomes reconheci. Confirma as sugestões e corrige qualquer associação que esteja errada. Nome, NIF e N.º de serviço são obrigatórios.
+          </div>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            {FIELD_OPTIONS.map((field) => {
+              const current = mapping[field.key];
+              const selectedElsewhere = new Set<number>(
+                FIELD_OPTIONS.filter((other) => other.key !== field.key && mapping[other.key] !== null)
+                  .map((other) => mapping[other.key] as number)
+              );
+              const inputId = "mapping-" + field.key;
+              const selectedHeader = analysis.headers.find((header) => header.column === current);
+              const statusClass = current === null && field.required ? "text-rose-600" : "text-slate-400";
+              return (
+                <div key={field.key} className="rounded-xl border border-slate-200 p-4">
+                  <label htmlFor={inputId} className="block text-sm font-semibold text-slate-800">
+                    {field.label} {field.required && <span className="text-rose-600">*</span>}
+                  </label>
+                  <p className="mt-1 text-xs text-slate-400">{field.hint}</p>
+                  <select id={inputId} value={current === null ? "" : String(current)}
+                    onChange={(event) => updateMapping(field.key, event.target.value)}
+                    className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100">
+                    <option value="">— Não importar este campo —</option>
+                    {analysis.headers.map((header) => (
+                      <option key={header.column} value={String(header.column)} disabled={selectedElsewhere.has(header.column)}>
+                        {header.letter + " — " + header.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className={"mt-2 text-xs " + statusClass}>
+                    {current === null ? (field.required ? "Associação obrigatória." : "Campo opcional não associado.") : "Associado à coluna " + (selectedHeader?.letter ?? current) + "."}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+
+          {analysis.sampleRows.length > 0 && (
+            <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50 p-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Amostra das primeiras linhas</h3>
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full min-w-[500px] text-left text-xs">
+                  <thead><tr>{analysis.headers.map((header) => <th key={header.column} className="px-2 py-2 font-semibold text-slate-500">{header.letter + ": " + header.name}</th>)}</tr></thead>
+                  <tbody>{analysis.sampleRows.slice(0, 2).map((row, index) => <tr key={index}>{row.map((value, column) => <td key={column} className="max-w-[180px] truncate px-2 py-2 text-slate-700">{value || "—"}</td>)}</tr>)}</tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {(missingRequired.length > 0 || duplicateMapping) && (
+            <p role="alert" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              {duplicateMapping ? "A mesma coluna está associada a mais do que um campo. Escolhe colunas diferentes. " : ""}
+              {missingRequired.length > 0 ? "Falta associar: " + missingRequired.map((field) => field.label).join(", ") + "." : ""}
+            </p>
+          )}
+
+          <div className="mt-5 flex flex-col-reverse justify-end gap-2 sm:flex-row">
+            <button type="button" disabled={busy || missingRequired.length > 0 || duplicateMapping} onClick={handlePreview}
+              className="rounded-xl bg-blue-700 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50">
+              {busy ? "A validar os dados..." : "Confirmar associações e pré-visualizar"}
+            </button>
+          </div>
+        </section>
+      )}
 
       {preview && (
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
