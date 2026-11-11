@@ -3,7 +3,7 @@ import { Search, UserPlus, Upload, Users } from "lucide-react";
 import { ClientDetailsButton } from "@/components/crm/client-details-button";
 import { ClientListFilters } from "@/components/crm/client-list-filters";
 import { createClient } from "@/lib/supabase/server";
-import { getServicePackageFamily, getServicePackageLabel } from "@/lib/crm/packages";
+import { getServicePackageFamily, getServicePackageLabel, SERVICE_PACKAGE_GROUPS } from "@/lib/crm/packages";
 
 type Props = { searchParams: Promise<{ q?: string; page?: string; perPage?: string; package?: string }> };
 
@@ -81,11 +81,7 @@ export default async function ClientsPage({ searchParams }: Props) {
     }
   }
 
-  const packages = Array.from(new Set(
-    activeServices
-      .map((service) => getServicePackageLabel(service))
-      .filter((label): label is string => Boolean(label))
-  )).sort((a, b) => a.localeCompare(b, "pt-PT"));
+  const packages = [...SERVICE_PACKAGE_GROUPS];
 
   const selectedPackage = params.package && packages.includes(params.package) ? params.package : "";
   const packageClientIds = selectedPackage
@@ -138,7 +134,7 @@ export default async function ClientsPage({ searchParams }: Props) {
   const m32Count = activeServices.filter((service) =>
     service.service_type === "meo" && getServicePackageFamily(getServicePackageLabel(service)) === "m3m2"
   ).length;
-  const mobileCount = activeServices.filter((service) => service.service_type === "mobile").length;
+  const mobileCount = activeServices.filter((service) => getServicePackageLabel(service) === "M MOVEL").length;
   const gcpCount = activeServices.filter((service) => service.service_type === "gcp").length;
 
   return (
@@ -220,7 +216,7 @@ export default async function ClientsPage({ searchParams }: Props) {
                 {(clients ?? []).map((client) => {
                   const services = (client.services ?? []).filter((service) => service.is_active);
                   const meoCount = services.filter((service) => service.service_type === "meo").length;
-                  const rowMobileCount = services.filter((service) => service.service_type === "mobile").length;
+                  const rowMobileCount = services.filter((service) => getServicePackageLabel(service) === "M MOVEL").length;
                   const rowGcpCount = services.filter((service) => service.service_type === "gcp").length;
                   const packageLabels = Array.from(new Set(
                     services.map((service) => getServicePackageLabel(service)).filter((label): label is string => Boolean(label))
