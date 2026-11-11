@@ -147,7 +147,7 @@ export default async function ClientsPage({ searchParams }: Props) {
   async function loadPage(page: number) {
     let request = supabase
       .from("clients")
-      .select("id, full_name, nif, nic, ncc, phone, email, created_at, services(id, service_number, service_type, package_name, source_data, loyalty_end_date, is_active)", { count: "exact" })
+      .select("id, full_name, nif, nic, ncc, phone, email, services(id, service_number, service_type, package_name, source_data, loyalty_end_date, is_active)", { count: "exact" })
       .order("full_name", { ascending: true })
       .range((page - 1) * perPage, page * perPage - 1);
 
@@ -289,7 +289,6 @@ export default async function ClientsPage({ searchParams }: Props) {
                     <tr key={client.id} className="transition hover:bg-slate-50/70">
                       <td className="px-4 py-2.5">
                         <ClientDetailsButton clientId={client.id} clientName={client.full_name} />
-                        <p className="mt-0.5 text-xs text-slate-400">Criado em {new Date(client.created_at).toLocaleDateString("pt-PT")}</p>
                       </td>
                       <td className="px-4 py-2.5 text-sm text-slate-700">{client.nif}</td>
                       <td className="px-4 py-2.5">
