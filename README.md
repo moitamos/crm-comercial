@@ -61,3 +61,7 @@ Não introduzir dados reais de clientes até estar confirmada a autorização da
 - Colunas: Nome, NIF, N cliente, N conta, N serviço, Data fidelização e Serviço.
 - Cada linha representa um serviço. Linhas com o mesmo NIF são agrupadas num único cliente.
 - A importação não transfere clientes entre carteiras.
+
+### Correspondência automática de colunas Excel
+
+O importador analisa os cabeçalhos da folha, tenta identificar a linha de títulos (incluindo quando existe um título acima da tabela) e sugere automaticamente a correspondência com os campos do CRM. Antes da pré-visualização, o utilizador pode rever ou alterar cada associação. As associações obrigatórias são Nome, NIF e N.º de serviço; NIC, NCC, pacote, fim de fidelização, telefone, email e morada são opcionais.
