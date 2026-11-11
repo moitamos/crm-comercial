@@ -242,7 +242,7 @@ export async function POST(request: Request) {
   const nifList = Array.from(groups.keys());
   const { data: existingClients, error: existingError } = await supabase
     .from("clients")
-    .select("id, nif, portfolio_id")
+    .select("id, nif, portfolio_id, full_name, import_batch_id")
     .in("nif", nifList);
 
   if (existingError) {
@@ -291,7 +291,7 @@ export async function POST(request: Request) {
 
     const { data: resolvedClients, error: resolveError } = await supabase
       .from("clients")
-      .select("id, nif, portfolio_id")
+      .select("id, nif, portfolio_id, full_name, import_batch_id")
       .in("nif", nifList);
 
     if (resolveError) {
@@ -302,6 +302,30 @@ export async function POST(request: Request) {
     for (const client of resolvedClients ?? []) {
       if (client.portfolio_id === portfolioId) clientIds.set(client.nif, client.id);
     }
+  }
+
+  const latestClientRows = await supabase
+    .from("clients")
+    .select("id, nif, full_name, import_batch_id, portfolio_id")
+    .in("nif", nifList);
+  if (latestClientRows.error) {
+    return NextResponse.json({ error: "Não foi possível confirmar os dados finais dos clientes." }, { status: 500 });
+  }
+
+  const latestClientByNif = new Map((latestClientRows.data ?? []).map((client) => [client.nif, client]));
+  const nameCorrections = Array.from(groups.entries()).flatMap(([nif, items]) => {
+    const id = clientIds.get(nif);
+    const current = latestClientByNif.get(nif);
+    const canonicalName = items[0]?.fullName;
+    if (!id || !current || current.portfolio_id !== portfolioId || !current.import_batch_id || !canonicalName || current.full_name === canonicalName) return [];
+    return [{ id, full_name: canonicalName }];
+  });
+  const correctionResults = await Promise.all(nameCorrections.map(({ id, full_name }) =>
+    supabase.from("clients").update({ full_name, updated_at: new Date().toISOString() }).eq("id", id)
+  ));
+  const correctionError = correctionResults.find((result) => result.error)?.error;
+  if (correctionError) {
+    return NextResponse.json({ error: "Não foi possível alinhar os nomes dos clientes com a folha principal Clientes.", details: correctionError.message }, { status: 500 });
   }
 
   const rejectedClientNifs = nifList.filter((nif) => !clientIds.has(nif));
