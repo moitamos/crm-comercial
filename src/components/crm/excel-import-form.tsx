@@ -6,7 +6,7 @@ import type { ExcelColumn, ImportField, ImportMapping, ImportRow, WorkbookAnalys
 
 type Portfolio = { id: string; name: string };
 type Preview = { fileName: string; rowCount: number; rows: ImportRow[]; warnings: string[] };
-type CommitResult = { success: true; clientsCreated: number; clientsReused: number; servicesCreated: number; servicesUpdated: number; rejectedRows: number; dealsCreated: number; funnelRefreshWarning?: string | null };
+type CommitResult = { success: true; clientsCreated: number; clientsReused: number; servicesCreated: number; servicesUpdated: number; clientDetailsSaved: number; administratorsSaved: number; rejectedRows: number; dealsCreated: number; funnelRefreshWarning?: string | null };
 type ErrorResult = { error: string; details?: string };
 
 const FIELD_OPTIONS: Array<{ key: ImportField; label: string; required?: boolean; hint: string }> = [
@@ -187,12 +187,12 @@ export function ExcelImportForm({ portfolios }: { portfolios: Portfolio[] }) {
           {analysis.mode === "piu" ? (
             <div className="mt-5 space-y-3">
               <div className="rounded-xl bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-900">
-                Reconheci a estrutura do ficheiro de extração PIU. Vou juntar a folha de clientes com os serviços de Refid MEO, Cartões Móveis e GC Pack, relacionando tudo pelo NIF. O mesmo cliente pode ter vários serviços; estes serão mantidos na mesma ficha.
+                Reconheci a estrutura do ficheiro de extração PIU. Vou juntar a folha de clientes com os serviços de Refid MEO, Cartões Móveis e GC Pack, relacionando tudo pelo NIF. O mesmo cliente pode ter vários serviços; também vou importar todos os administradores de conta e os campos originais de cada uma das cinco folhas.
               </div>
               <div className="flex flex-wrap gap-2">
                 {analysis.recognizedSheets.map((sheet) => <span key={sheet} className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800">{sheet}</span>)}
               </div>
-              <p className="text-xs leading-5 text-slate-500">As folhas de campanhas, faturação e administradores não são importadas nesta fase. Os clientes sem serviços também são criados.</p>
+              <p className="text-xs leading-5 text-slate-500">As folhas de campanhas, faturação e erros ficam fora desta importação. Os clientes sem serviços também são criados e todos os administradores da folha própria são associados pelo NIF.</p>
             </div>
           ) : (
             <>
@@ -303,11 +303,13 @@ export function ExcelImportForm({ portfolios }: { portfolios: Portfolio[] }) {
       {result && (
         <section role="status" className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
           <h2 className="font-semibold text-emerald-900">Importação concluída</h2>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-7">
             <p className="text-sm text-emerald-800"><strong className="block text-2xl">{result.clientsCreated}</strong>clientes criados</p>
             <p className="text-sm text-emerald-800"><strong className="block text-2xl">{result.clientsReused}</strong>clientes existentes</p>
             <p className="text-sm text-emerald-800"><strong className="block text-2xl">{result.servicesCreated}</strong>serviços criados</p>
             <p className="text-sm text-emerald-800"><strong className="block text-2xl">{result.servicesUpdated}</strong>serviços atualizados</p>
+            <p className="text-sm text-emerald-800"><strong className="block text-2xl">{result.clientDetailsSaved}</strong>fichas PIU atualizadas</p>
+            <p className="text-sm text-emerald-800"><strong className="block text-2xl">{result.administratorsSaved}</strong>administradores guardados</p>
             <p className="text-sm text-emerald-800"><strong className="block text-2xl">{result.dealsCreated}</strong>negócios elegíveis adicionados ao funil</p>
           </div>
           {result.funnelRefreshWarning && <p className="mt-3 text-sm text-amber-800">{result.funnelRefreshWarning}</p>}
