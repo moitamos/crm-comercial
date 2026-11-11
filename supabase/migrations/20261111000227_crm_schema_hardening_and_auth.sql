@@ -296,7 +296,7 @@ begin
     (date_trunc('month',s.loyalty_end_date)::date-interval '6 months')::date,
     concat('renewal:',c.id::text,':',
       (date_trunc('month',s.loyalty_end_date)::date-interval '6 months')::date::text),
-    null
+    null::uuid
   from public.clients c join public.services s on s.client_id=c.id
   where s.is_active=true and s.loyalty_end_date is not null
     and (date_trunc('month',s.loyalty_end_date)::date-interval '6 months')::date<=current_date
