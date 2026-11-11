@@ -18,6 +18,46 @@ type Service = {
   is_active: boolean;
   source_data: SourceRow[] | SourceRow | null;
 };
+type Deal = {
+  id: string;
+  deal_type: string;
+  stage: string;
+  created_at: string;
+  last_contact_at: string | null;
+  next_contact_at: string | null;
+  lost_reason: string | null;
+  notes: string | null;
+  eligibility_month: string | null;
+};
+type DealService = {
+  id: string;
+  deal_id: string;
+  service_id: string;
+  decision: string;
+  future_package: string | null;
+  current_monthly_fee: number | string | null;
+  future_monthly_fee: number | string | null;
+};
+type Sale = {
+  id: string;
+  deal_id: string;
+  status: string;
+  completed_at: string | null;
+  sp_generated: number | string | null;
+};
+type SaleService = {
+  id: string;
+  sale_id: string;
+  service_id: string;
+  decision: string;
+  before_package: string | null;
+  after_package: string | null;
+  before_monthly_fee: number | string | null;
+  after_monthly_fee: number | string | null;
+  points: number | string | null;
+  previous_loyalty_end_date: string | null;
+  new_loyalty_end_date: string | null;
+};
 type Administrator = {
   id: string;
   full_name: string | null;
@@ -66,6 +106,46 @@ function moneyLabel(value: number | string | null) {
   return Number(value).toLocaleString("pt-PT", { style: "currency", currency: "EUR" });
 }
 
+function dealTypeLabel(value: string) {
+  if (value === "portfolio_renewal") return "Renovação de carteira";
+  if (value === "new_sale") return "Nova venda";
+  if (value === "package_change") return "Alteração de pacote";
+  return value;
+}
+
+function dealStageLabel(value: string) {
+  if (value === "to_contact") return "Por contactar";
+  if (value === "negotiation") return "Em negociação";
+  if (value === "scheduled") return "Agendado";
+  if (value === "future_contact") return "Contactar futuramente";
+  if (value === "sale") return "Venda";
+  if (value === "lost") return "Perdido";
+  return value;
+}
+
+function dealStageStyle(value: string) {
+  if (value === "sale") return "bg-emerald-100 text-emerald-800";
+  if (value === "lost") return "bg-rose-100 text-rose-800";
+  if (value === "scheduled" || value === "future_contact") return "bg-amber-100 text-amber-800";
+  if (value === "negotiation") return "bg-violet-100 text-violet-800";
+  return "bg-blue-100 text-blue-800";
+}
+
+function decisionLabel(value: string) {
+  if (value === "renew") return "Renovar";
+  if (value === "keep_active") return "Manter ativo";
+  if (value === "cancel") return "Cancelar";
+  return value;
+}
+
+function dateTimeLabel(value: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleString("pt-PT", { dateStyle: "short", timeStyle: "short" });
+}
+
 function serviceLabel(type: Service["service_type"]) {
   if (type === "meo") return "MEO";
   if (type === "mobile") return "M Móvel";
@@ -100,7 +180,7 @@ export default async function ClientDetailPage({ params, searchParams }: Props) 
 
   if (error || !client) notFound();
 
-  const [servicesResult, administratorsResult, importDetailsResult] = await Promise.all([
+  const [servicesResult, administratorsResult, importDetailsResult, dealsResult] = await Promise.all([
     supabase
       .from("services")
       .select("id, service_number, service_type, package_name, current_monthly_fee, loyalty_end_date, loyalty_conclusion_date, is_active, source_data")
@@ -118,10 +198,45 @@ export default async function ClientDetailPage({ params, searchParams }: Props) 
       .eq("client_id", id)
       .eq("source_system", "PIU")
       .maybeSingle(),
+    supabase
+      .from("deals")
+      .select("id, deal_type, stage, created_at, last_contact_at, next_contact_at, lost_reason, notes, eligibility_month")
+      .eq("client_id", id)
+      .order("created_at", { ascending: false }),
   ]);
 
   const services = (servicesResult.data ?? []) as Service[];
   const administrators = (administratorsResult.data ?? []) as Administrator[];
+  const deals = (dealsResult.data ?? []) as Deal[];
+  const dealIds = deals.map((deal) => deal.id);
+
+  const [dealServicesResult, salesResult] = dealIds.length
+    ? await Promise.all([
+        supabase
+          .from("deal_services")
+          .select("id, deal_id, service_id, decision, future_package, current_monthly_fee, future_monthly_fee")
+          .in("deal_id", dealIds),
+        supabase
+          .from("sales")
+          .select("id, deal_id, status, completed_at, sp_generated")
+          .in("deal_id", dealIds),
+      ])
+    : [
+        { data: [], error: null },
+        { data: [], error: null },
+      ];
+
+  const dealServices = (dealServicesResult.data ?? []) as DealService[];
+  const sales = (salesResult.data ?? []) as Sale[];
+  const saleIds = sales.map((sale) => sale.id);
+  const saleServicesResult = saleIds.length
+    ? await supabase
+        .from("sale_services")
+        .select("id, sale_id, service_id, decision, before_package, after_package, before_monthly_fee, after_monthly_fee, points, previous_loyalty_end_date, new_loyalty_end_date")
+        .in("sale_id", saleIds)
+    : { data: [], error: null };
+  const saleServices = (saleServicesResult.data ?? []) as SaleService[];
+  const servicesById = new Map(services.map((service) => [service.id, service]));
   const activeServices = services.filter((service) => service.is_active);
   const sourceRowsForClient = [
     ...sourceRows(importDetailsResult.data?.source_data),
@@ -147,9 +262,9 @@ export default async function ClientDetailPage({ params, searchParams }: Props) 
       </Link>
 
       {search.created === "1" && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Cliente criado com sucesso.</p>}
-      {(servicesResult.error || administratorsResult.error || importDetailsResult.error) && (
+      {(servicesResult.error || administratorsResult.error || importDetailsResult.error || dealsResult.error || dealServicesResult.error || salesResult.error || saleServicesResult.error) && (
         <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Não foi possível carregar toda a informação de serviços ou detalhes importados. Atualiza a página ou contacta o administrador.
+          Não foi possível carregar toda a informação do cliente ou dos negócios. Atualiza a página ou contacta o administrador.
         </p>
       )}
 
@@ -229,6 +344,128 @@ export default async function ClientDetailPage({ params, searchParams }: Props) 
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-semibold text-slate-900">Negócios</h2>
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+            {deals.length} {deals.length === 1 ? "negócio" : "negócios"}
+          </span>
+        </div>
+        {deals.length === 0 ? (
+          <p className="mt-3 rounded-xl border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-500">
+            Este cliente ainda não tem negócios no funil nem negócios concluídos.
+          </p>
+        ) : (
+          <div className="mt-3 space-y-3">
+            {deals.map((deal) => {
+              const linkedServices = dealServices.filter((item) => item.deal_id === deal.id);
+              const sale = sales.find((item) => item.deal_id === deal.id);
+              const relatedSaleServices = sale ? saleServices.filter((item) => item.sale_id === sale.id) : [];
+              const isCompleted = deal.stage === "sale" || deal.stage === "lost";
+              return (
+                <details key={deal.id} className="overflow-hidden rounded-xl border border-slate-200">
+                  <summary className="flex cursor-pointer list-none flex-col gap-2 bg-slate-50 px-4 py-3 hover:bg-slate-100 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className={"rounded-full px-2.5 py-1 text-[11px] font-semibold " + dealStageStyle(deal.stage)}>
+                        {dealStageLabel(deal.stage)}
+                      </span>
+                      <span className="text-sm font-semibold text-slate-800">{dealTypeLabel(deal.deal_type)}</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                      <span>{linkedServices.length} {linkedServices.length === 1 ? "serviço" : "serviços"}</span>
+                      <span>{isCompleted ? "Concluído" : "No funil"}</span>
+                      <span>{dateLabel(deal.created_at.slice(0, 10))}</span>
+                    </div>
+                  </summary>
+                  <div className="space-y-4 p-4">
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <div><p className="text-[11px] uppercase tracking-wide text-slate-400">Criado em</p><p className="mt-1 text-sm text-slate-700">{dateTimeLabel(deal.created_at)}</p></div>
+                      <div><p className="text-[11px] uppercase tracking-wide text-slate-400">Elegível em</p><p className="mt-1 text-sm text-slate-700">{deal.eligibility_month ? dateLabel(deal.eligibility_month) : "—"}</p></div>
+                      <div><p className="text-[11px] uppercase tracking-wide text-slate-400">Último contacto</p><p className="mt-1 text-sm text-slate-700">{dateTimeLabel(deal.last_contact_at)}</p></div>
+                      <div><p className="text-[11px] uppercase tracking-wide text-slate-400">Próximo contacto</p><p className="mt-1 text-sm text-slate-700">{dateTimeLabel(deal.next_contact_at)}</p></div>
+                    </div>
+
+                    {deal.stage === "lost" && deal.lost_reason && (
+                      <div className="rounded-lg bg-rose-50 px-3 py-2.5">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-rose-500">Motivo de perda</p>
+                        <p className="mt-1 text-sm text-rose-800">{deal.lost_reason}</p>
+                      </div>
+                    )}
+
+                    {linkedServices.length > 0 && (
+                      <div>
+                        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Serviços associados</h3>
+                        <div className="mt-2 overflow-x-auto rounded-lg border border-slate-100">
+                          <table className="w-full min-w-[520px] text-left text-sm">
+                            <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-400">
+                              <tr>
+                                <th className="px-3 py-2 font-semibold">N.º serviço</th>
+                                <th className="px-3 py-2 font-semibold">Pacote atual</th>
+                                <th className="px-3 py-2 font-semibold">Decisão</th>
+                                <th className="px-3 py-2 font-semibold">Novo pacote</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {linkedServices.map((item) => {
+                                const service = servicesById.get(item.service_id);
+                                return (
+                                  <tr key={item.id}>
+                                    <td className="px-3 py-2.5 font-medium text-slate-800">{service?.service_number ?? "Serviço indisponível"}</td>
+                                    <td className="px-3 py-2.5 text-slate-600">{service ? (getServicePackageLabel(service) ?? service.package_name ?? serviceLabel(service.service_type)) : "—"}</td>
+                                    <td className="px-3 py-2.5 text-slate-600">{decisionLabel(item.decision)}</td>
+                                    <td className="px-3 py-2.5 text-slate-600">{item.future_package ?? "—"}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {sale && (
+                      <div className="rounded-lg border border-emerald-100 bg-emerald-50/60 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Registo de venda</p>
+                          <span className="text-xs text-emerald-700">{sale.status === "completed" ? "Concluída" : "Cancelada"}</span>
+                        </div>
+                        <div className="mt-2 grid gap-3 sm:grid-cols-3">
+                          <div><p className="text-[11px] text-emerald-700/70">Data da venda</p><p className="mt-1 text-sm font-medium text-emerald-900">{dateTimeLabel(sale.completed_at)}</p></div>
+                          <div><p className="text-[11px] text-emerald-700/70">SP gerados</p><p className="mt-1 text-sm font-medium text-emerald-900">{sale.sp_generated === null ? "—" : Number(sale.sp_generated).toLocaleString("pt-PT")}</p></div>
+                          <div><p className="text-[11px] text-emerald-700/70">Serviços na venda</p><p className="mt-1 text-sm font-medium text-emerald-900">{relatedSaleServices.length}</p></div>
+                        </div>
+                        {relatedSaleServices.length > 0 && (
+                          <div className="mt-3 space-y-1.5">
+                            {relatedSaleServices.map((item) => {
+                              const service = servicesById.get(item.service_id);
+                              return (
+                                <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white/80 px-3 py-2 text-xs text-slate-700">
+                                  <span className="font-medium">{service?.service_number ?? "Serviço"}</span>
+                                  <span>{item.before_package ?? "—"} → {item.after_package ?? "—"}</span>
+                                  <span>{moneyLabel(item.before_monthly_fee)} → {moneyLabel(item.after_monthly_fee)}</span>
+                                  <span className="font-semibold">{item.points === null ? "—" : Number(item.points).toLocaleString("pt-PT") + " SP"}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {deal.notes && (
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Notas</p>
+                        <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{deal.notes}</p>
+                      </div>
+                    )}
+                  </div>
+                </details>
+              );
+            })}
           </div>
         )}
       </section>
