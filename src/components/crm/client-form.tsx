@@ -53,7 +53,7 @@ export function ClientForm({ portfolios }: { portfolios: Portfolio[] }) {
   const [services, setServices] = useState<ServiceDraft[]>([emptyService(1)]);
   const [nextServiceId, setNextServiceId] = useState(2);
 
-  function updateService(id: number, field: keyof Omit<ServiceDraft, "id">, value: string) {
+  function updateService<K extends keyof Omit<ServiceDraft, "id">>(id: number, field: K, value: ServiceDraft[K]) {
     setServices((previous) => previous.map((service) =>
       service.id === id ? { ...service, [field]: value } : service
     ));
@@ -151,7 +151,7 @@ export function ClientForm({ portfolios }: { portfolios: Portfolio[] }) {
                   <div>
                     <label htmlFor={"service-type-" + service.id} className="mb-2 block text-xs font-medium text-slate-600">Tipo de serviço</label>
                     <select id={"service-type-" + service.id} value={service.service_type}
-                      onChange={(event) => updateService(service.id, "service_type", event.target.value)}
+                      onChange={(event) => updateService(service.id, "service_type", event.target.value as ServiceDraft["service_type"])}
                       className={fieldClass}>
                       <option value="meo">MEO</option>
                       <option value="mobile">M Móvel</option>
