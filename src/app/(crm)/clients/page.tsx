@@ -81,7 +81,7 @@ export default async function ClientsPage({ searchParams }: Props) {
     }
   }
 
-  const packages = [...SERVICE_PACKAGE_GROUPS];
+  const packages: string[] = [...SERVICE_PACKAGE_GROUPS];
 
   const selectedPackage = params.package && packages.includes(params.package) ? params.package : "";
   const packageClientIds = selectedPackage
