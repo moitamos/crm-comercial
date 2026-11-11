@@ -390,6 +390,8 @@ export async function POST(request: Request) {
         name: administrator.fullName?.trim().toLocaleLowerCase("pt-PT") ?? "",
         email: administrator.email?.trim().toLocaleLowerCase("pt-PT") ?? "",
         phones: [...administrator.phoneNumbers].sort(),
+        marketingPermission: administrator.marketingPermission ?? "",
+        observations: administrator.observations ?? "",
       });
       const sourceKey = createHash("sha256").update(identity).digest("hex");
       administratorRows.set(clientId + ":" + sourceKey, {
