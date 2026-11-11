@@ -1,44 +1,58 @@
-# Configuração Supabase
+# Supabase — CRM Comercial
 
-## 1. Criar o projeto
-1. Abre https://supabase.com/dashboard e cria um projeto.
-2. Escolhe uma região próxima (por exemplo, Frankfurt).
-3. Guarda a password da base de dados num gestor de passwords.
+O projeto Supabase já existente chama-se **CRM Comercial**. A base de dados inicial já tinha as tabelas de clientes, serviços, negócios, vendas, fidelização, pontos, documentos, perfis e objetivos. As migrações abaixo foram aplicadas de forma incremental; não executar uma segunda migração de criação total de tabelas por cima desta base.
 
-## 2. Criar as tabelas e políticas
-1. Abre o SQL Editor do projeto.
-2. Copia e executa o ficheiro \`migrations/202611100001_initial_schema.sql\`.
-3. Confirma que a migração terminou sem erros.
-4. A migração cria as tabelas, os índices, os triggers, as políticas RLS e o bucket privado \`crm-invoices\`.
-5. O agendamento das oportunidades de renovação usa pg_cron quando essa extensão estiver disponível. Se não estiver, a função \`public.generate_due_renewal_opportunities()\` fica pronta para agendamento posterior.
+## Projeto ligado
+- Project ref: \`epfvummckfonunxcrsqc\`
+- Região: \`eu-west-3\` (Paris)
+- Estado: \`ACTIVE_HEALTHY\`
+- URL: guardado na Vercel como \`NEXT_PUBLIC_SUPABASE_URL\`
+- Publishable key: guardada na Vercel como \`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY\`
+- Nunca usar a secret/service_role key no browser ou numa variável \`NEXT_PUBLIC_*\`.
 
-## 3. Criar o primeiro administrador
-1. Em Authentication → Users, usa **Add user** para criar a tua conta com email e palavra-passe.
+## Migrações aplicadas
+As seguintes versões estão registadas no histórico de migrações do projeto:
+1. \`20261111000227_crm_schema_hardening_and_auth\`
+   - Perfis automáticos por trigger Auth, tarefas, importações, documentos PDF privados, critérios de contacto/perda, renovações e políticas RLS.
+2. \`20261111000305_crm_portfolios_and_assignment_integrity\`
+   - Carteiras, membros de carteira, relação composta cliente/carteira/comercial e proteção de transferências.
+3. \`20261111000321_move_auth_helpers_to_private_schema\`
+   - Funções SECURITY DEFINER retiradas do schema exposto pela API REST; continuam disponíveis para RLS e triggers.
+4. \`20261111000336_crm_policy_and_index_cleanup\`
+   - Ajustes das políticas permissivas e índices.
+
+A base contém estas áreas: \`profiles\`, \`portfolios\`, \`portfolio_members\`, \`clients\`, \`services\`, \`deals\`, \`deal_services\`, \`interactions\`, \`sales\`, \`sale_services\`, \`loyalty_history\`, \`points_ledger\`, \`monthly_goals\`, \`deal_documents\`, \`audit_log\`, \`import_batches\` e \`tasks\`.
+
+## Criar o primeiro administrador
+1. Em Supabase → Authentication → Users, usa **Add user** para criar a tua conta com email e palavra-passe.
 2. Confirma o email, se o projeto o exigir.
-3. No SQL Editor, abre \`bootstrap/01-first-admin.sql\`, substitui \`SUBSTITUIR_PELO_TEU_EMAIL\` pelo email da conta e executa.
-4. O resultado esperado é \`UPDATE 1\`.
-5. Em Authentication → Sign In / Providers (ou User Signups, conforme a interface), desativa **Allow new users to sign up**. As futuras contas devem ser criadas/convidadas pelo administrador.
+3. Em Authentication → Sign In / Providers, desativa **Allow new users to sign up**. As futuras contas devem ser criadas/convidadas pelo administrador.
+4. Abre \`bootstrap/01-first-admin.sql\`, substitui \`SUBSTITUIR_PELO_TEU_EMAIL\` pelo email exato da conta e executa no SQL Editor.
+5. Confirma que o teu perfil tem \`role = admin\` e \`is_active = true\`, e que estás associado à \`Carteira Principal\`.
 
-O trigger \`handle_new_auth_user\` cria cada perfil com o papel \`commercial\`; a promoção inicial para \`admin\` é manual e explícita. Não existe registo público na interface do CRM.
+O trigger \`private.handle_new_auth_user\` cria automaticamente o perfil dos novos utilizadores com o papel \`commercial\`. A elevação a administrador é manual e explícita.
 
-## 4. Ligar a aplicação
-1. Em Project Settings → API, copia o **Project URL** e a **Publishable key** (não a secret key).
-2. Na Vercel → projeto \`crm-comercial\` → Settings → Environment Variables, cria:
-   - \`NEXT_PUBLIC_SUPABASE_URL\`
-   - \`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY\`
-3. Adiciona ambas a Production, Preview e Development.
-4. Em Authentication → URL Configuration, define a Site URL para o domínio de produção e adiciona os URLs de preview usados na recuperação de palavra-passe. Durante o teste, podes adicionar \`https://*.vercel.app/**\` apenas se a configuração do projeto permitir wildcards.
-5. Faz um novo deployment para carregar as variáveis.
+## Configuração Vercel
+Já estão definidas, em Production, Preview e Development:
+- \`NEXT_PUBLIC_SUPABASE_URL\`
+- \`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY\`
 
-## 5. Segurança e modelo de acesso
-- NIF tem índice UNIQUE global e validação de 9 dígitos.
-- Cada cliente tem uma única carteira e, no máximo, um comercial atribuído.
-- A chave composta carteira/comercial impede atribuições a membros que não pertencem à carteira.
-- Apenas administradores podem alterar carteira ou comercial atribuído.
-- Comerciais apenas consultam clientes atribuídos a si.
-- Quando um perfil é desativado, os clientes e oportunidades abertas ficam sem comercial; não há transferência automática.
-- Todas as tabelas de negócio têm Row Level Security.
-- Faturas são PDFs num bucket privado, autorizadas pelas políticas de Storage.
+Depois de confirmares o domínio Vercel/produção, configura em Supabase → Authentication → URL Configuration:
+- Site URL para o domínio de produção.
+- Redirect URLs para os endereços do CRM, incluindo o URL de preview que vais usar para testar recuperação de palavra-passe.
 
-## 6. Variáveis de ambiente
-Ver \`.env.example\` na raiz. Nunca uses a secret/service_role key na aplicação web, em variáveis \`NEXT_PUBLIC_*\`, nem no GitHub.
+## Segurança
+- NIF tem restrição UNIQUE global e validação de 9 dígitos.
+- Cada cliente tem uma única carteira.
+- Um comercial só pode ser atribuído a uma carteira de que é membro.
+- Só administradores podem alterar carteira ou comercial responsável.
+- Ao desativar um comercial, clientes e negócios abertos ficam sem comercial atribuído; não são transferidos automaticamente.
+- Todas as tabelas de negócio têm RLS.
+- Funções de autorização SECURITY DEFINER estão no schema \`private\`, não exposto pela API REST.
+- Documentos são PDFs num bucket privado \`crm-deal-documents\`, com limite de 15 MB e políticas de Storage.
+
+## Validação
+Os advisories de segurança e saúde foram verificados após as migrações. A análise de segurança não apresentou findings. A análise de performance mantém apenas índices por agora não utilizados, expectável num projeto ainda sem dados e sem tráfego.
+
+## Nota sobre ambientes novos
+Esta base foi provisionada antes do início do histórico de migrações do repositório. Para criar um segundo projeto do zero, será necessário adicionar/exportar o baseline da estrutura antiga antes destas migrações incrementais; não executar apenas as migrações incrementais num projeto vazio.
