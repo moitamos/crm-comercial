@@ -34,19 +34,19 @@ function pageHref(page: number, perPage: number, query: string, packageFilter: s
 
 function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-3 shadow-sm">
-      <p className="text-[11px] font-medium text-slate-500">{label}</p>
-      <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">{value.toLocaleString("pt-PT")}</p>
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+      <p className="text-[10px] font-medium text-slate-500">{label}</p>
+      <p className="mt-0.5 text-base font-semibold tabular-nums text-slate-900">{value.toLocaleString("pt-PT")}</p>
     </div>
   );
 }
 
 function ClientCountMetric({ value }: { value: number }) {
   return (
-    <div className="inline-flex self-start items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-      <span className="text-xs font-medium text-slate-500">Clientes</span>
+    <div className="inline-flex self-start items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm">
+      <span className="text-[11px] font-medium text-slate-500">Clientes</span>
       <span className="text-xs text-slate-400">-</span>
-      <span className="text-sm font-semibold tabular-nums text-slate-900">{value.toLocaleString("pt-PT")}</span>
+      <span className="text-[13px] font-semibold tabular-nums text-slate-900">{value.toLocaleString("pt-PT")}</span>
     </div>
   );
 }
@@ -214,7 +214,7 @@ export default async function ClientsPage({ searchParams }: Props) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-5">
         <ClientCountMetric value={portfolioClients} />
         <Metric label="MxO's · M4/M5/Sport Office 4/5" value={mxoCount} />
         <Metric label="M Móveis" value={mobileCount} />
@@ -223,21 +223,21 @@ export default async function ClientsPage({ searchParams }: Props) {
       </div>
       {servicesError && <p className="text-xs text-amber-700">Alguns indicadores ou opções de pacote podem estar incompletos porque não foi possível ler todos os serviços.</p>}
 
-      <form method="get" className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:flex-row">
+      <form method="get" className="flex flex-col gap-1.5 rounded-xl border border-slate-200 bg-white p-2 shadow-sm sm:flex-row">
         <label htmlFor="q" className="sr-only">Pesquisar clientes</label>
         <input type="hidden" name="page" value="1" />
         <input type="hidden" name="perPage" value={String(perPage)} />
         {selectedPackage && <input type="hidden" name="package" value={selectedPackage} />}
         <div className="flex min-w-0 flex-1 items-center gap-2 px-2">
-          <Search size={18} className="shrink-0 text-slate-400" />
+          <Search size={16} className="shrink-0 text-slate-400" />
           <input id="q" name="q" defaultValue={query} placeholder="Pesquisar por nome, NIF, N.º cliente ou N.º conta"
-            className="w-full border-0 bg-transparent py-2.5 text-sm outline-none placeholder:text-slate-400" />
+            className="w-full border-0 bg-transparent py-1.5 text-sm outline-none placeholder:text-slate-400" />
         </div>
-        <button type="submit" className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">Pesquisar</button>
-        {query && <Link href={pageHref(1, perPage, "", selectedPackage)} className="rounded-xl px-4 py-2.5 text-center text-sm font-medium text-slate-500 hover:bg-slate-50">Limpar pesquisa</Link>}
+        <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">Pesquisar</button>
+        {query && <Link href={pageHref(1, perPage, "", selectedPackage)} className="rounded-lg px-3 py-2 text-center text-sm font-medium text-slate-500 hover:bg-slate-50">Limpar pesquisa</Link>}
       </form>
 
-      <div className="flex flex-col justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center">
+      <div className="flex flex-col justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 sm:flex-row sm:items-center">
         <p className="text-xs text-slate-500">Os filtros atualizam a lista automaticamente.</p>
         <ClientListFilters perPage={perPage} selectedPackage={selectedPackage} packages={packages} />
       </div>
@@ -245,7 +245,7 @@ export default async function ClientsPage({ searchParams }: Props) {
       {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">Não foi possível consultar a carteira. Confirma as permissões e tenta novamente.</div>}
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-1.5">
           <p className="text-xs text-slate-400">Página {currentPage} de {totalPages}</p>
           <ClientPagination
             currentPage={currentPage}
@@ -272,13 +272,13 @@ export default async function ClientsPage({ searchParams }: Props) {
             <table className="w-full min-w-[900px] border-collapse text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="px-5 py-4 font-semibold">Cliente</th>
-                  <th className="px-5 py-4 font-semibold">NIF</th>
-                  <th className="px-5 py-4 font-semibold">Pacotes</th>
-                  <th className="px-5 py-4 text-center font-semibold">MEO</th>
-                  <th className="px-5 py-4 text-center font-semibold">M Móvel</th>
-                  <th className="px-5 py-4 text-center font-semibold">GCP</th>
-                  <th className="px-5 py-4 font-semibold"><span className="sr-only">Abrir</span></th>
+                  <th className="px-4 py-2.5 font-semibold">Cliente</th>
+                  <th className="px-4 py-2.5 font-semibold">NIF</th>
+                  <th className="px-4 py-2.5 font-semibold">Pacotes</th>
+                  <th className="px-4 py-2.5 text-center font-semibold">MEO</th>
+                  <th className="px-4 py-2.5 text-center font-semibold">M Móvel</th>
+                  <th className="px-4 py-2.5 text-center font-semibold">GCP</th>
+                  <th className="px-4 py-2.5 font-semibold"><span className="sr-only">Abrir</span></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -292,21 +292,21 @@ export default async function ClientsPage({ searchParams }: Props) {
                   ));
                   return (
                     <tr key={client.id} className="transition hover:bg-slate-50/70">
-                      <td className="px-5 py-4">
+                      <td className="px-4 py-2.5">
                         <ClientDetailsButton clientId={client.id} clientName={client.full_name} />
-                        <p className="mt-1 text-xs text-slate-400">Criado em {new Date(client.created_at).toLocaleDateString("pt-PT")}</p>
+                        <p className="mt-0.5 text-xs text-slate-400">Criado em {new Date(client.created_at).toLocaleDateString("pt-PT")}</p>
                       </td>
-                      <td className="px-5 py-4 font-mono text-sm text-slate-700">{client.nif}</td>
+                      <td className="px-4 py-2.5 text-sm text-slate-700">{client.nif}</td>
                       <td className="px-5 py-4">
                         {packageLabels.length ? (
-                          <div className="flex max-w-[340px] flex-wrap gap-1.5">
-                            {packageLabels.map((label) => <span key={label} className="rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-800">{label}</span>)}
+                          <div className="flex max-w-[340px] flex-wrap gap-1">
+                            {packageLabels.map((label) => <span key={label} className="rounded bg-blue-50 px-1.5 py-0.5 text-[11px] font-medium text-blue-800">{label}</span>)}
                           </div>
                         ) : <span className="text-xs text-slate-400">—</span>}
                       </td>
-                      <td className="px-5 py-4 text-center"><span className="inline-flex min-w-8 justify-center rounded-lg bg-blue-50 px-2.5 py-1.5 font-semibold text-blue-800">{meoCount}</span></td>
-                      <td className="px-5 py-4 text-center"><span className="inline-flex min-w-8 justify-center rounded-lg bg-violet-50 px-2.5 py-1.5 font-semibold text-violet-800">{rowMobileCount}</span></td>
-                      <td className="px-5 py-4 text-center"><span className="inline-flex min-w-8 justify-center rounded-lg bg-emerald-50 px-2.5 py-1.5 font-semibold text-emerald-800">{rowGcpCount}</span></td>
+                      <td className="px-5 py-4 text-center"><span className="inline-flex min-w-7 justify-center rounded-md bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-800">{meoCount}</span></td>
+                      <td className="px-5 py-4 text-center"><span className="inline-flex min-w-7 justify-center rounded-md bg-violet-50 px-2 py-1 text-xs font-semibold text-violet-800">{rowMobileCount}</span></td>
+                      <td className="px-5 py-4 text-center"><span className="inline-flex min-w-7 justify-center rounded-md bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800">{rowGcpCount}</span></td>
                       <td className="px-5 py-4 text-right">
                         <Link href={"/clients/" + client.id} className="font-semibold text-blue-700 hover:text-blue-900">Ficha completa</Link>
                       </td>
@@ -317,7 +317,7 @@ export default async function ClientsPage({ searchParams }: Props) {
             </table>
           </div>
         )}
-        <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-2.5">
+        <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-3 py-2">
           <p className="text-xs font-medium text-slate-500">
             A mostrar {firstResult.toLocaleString("pt-PT")}–{lastResult.toLocaleString("pt-PT")} de {totalCount.toLocaleString("pt-PT")} clientes
           </p>
