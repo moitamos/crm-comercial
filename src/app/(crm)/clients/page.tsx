@@ -304,10 +304,10 @@ export default async function ClientsPage({ searchParams }: Props) {
                           </div>
                         ) : <span className="text-xs text-slate-400">—</span>}
                       </td>
-                      <td className="px-5 py-4 text-center"><span className="inline-flex min-w-7 justify-center rounded-md bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-800">{meoCount}</span></td>
-                      <td className="px-5 py-4 text-center"><span className="inline-flex min-w-7 justify-center rounded-md bg-violet-50 px-2 py-1 text-xs font-semibold text-violet-800">{rowMobileCount}</span></td>
-                      <td className="px-5 py-4 text-center"><span className="inline-flex min-w-7 justify-center rounded-md bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800">{rowGcpCount}</span></td>
-                      <td className="px-5 py-4 text-right">
+                      <td className="px-4 py-2.5 text-center"><span className="inline-flex min-w-7 justify-center rounded-md bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-800">{meoCount}</span></td>
+                      <td className="px-4 py-2.5 text-center"><span className="inline-flex min-w-7 justify-center rounded-md bg-violet-50 px-2 py-1 text-xs font-semibold text-violet-800">{rowMobileCount}</span></td>
+                      <td className="px-4 py-2.5 text-center"><span className="inline-flex min-w-7 justify-center rounded-md bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800">{rowGcpCount}</span></td>
+                      <td className="px-4 py-2.5 text-right">
                         <Link href={"/clients/" + client.id} className="font-semibold text-blue-700 hover:text-blue-900">Ficha completa</Link>
                       </td>
                     </tr>
