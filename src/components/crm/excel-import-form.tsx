@@ -7,7 +7,7 @@ import type { ExcelColumn, ImportField, ImportMapping, ImportRow, WorkbookAnalys
 type Portfolio = { id: string; name: string };
 type Preview = { fileName: string; rowCount: number; rows: ImportRow[]; warnings: string[] };
 type CommitResult = { success: true; clientsCreated: number; clientsReused: number; servicesCreated: number; servicesUpdated: number; rejectedRows: number; dealsCreated: number; funnelRefreshWarning?: string | null };
-type ErrorResult = { error: string };
+type ErrorResult = { error: string; details?: string };
 
 const FIELD_OPTIONS: Array<{ key: ImportField; label: string; required?: boolean; hint: string }> = [
   { key: "fullName", label: "Nome do cliente", required: true, hint: "Nome, cliente, titular..." },
@@ -116,7 +116,7 @@ export function ExcelImportForm({ portfolios }: { portfolios: Portfolio[] }) {
         body: JSON.stringify({ fileName: preview.fileName, portfolioId, rows: preview.rows }),
       });
       const payload = await response.json() as CommitResult & ErrorResult;
-      if (!response.ok) throw new Error(payload.error || "Não foi possível concluir a importação.");
+      if (!response.ok) throw new Error([payload.error || "Não foi possível concluir a importação.", payload.details ? "Detalhe: " + payload.details : ""].filter(Boolean).join("\\n"));
       setResult(payload);
       setPreview(null);
       setAnalysis(null);
