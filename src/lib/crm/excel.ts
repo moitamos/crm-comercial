@@ -562,7 +562,7 @@ function buildPiuRows(sheets: RawSheet[]): ImportRow[] {
       row.serviceData = [recordForRow(headers, source, index + 1)];
 
       if (serviceType === "gcp") {
-        row.packageName = "GCP";
+        row.packageName = cellText(valueAt(source, packageColumn)) || "GCP";
       } else {
         row.packageName = cellText(valueAt(source, packageColumn))
           || cellText(valueAt(source, headerIndex(headers, ["Serviço"])))
