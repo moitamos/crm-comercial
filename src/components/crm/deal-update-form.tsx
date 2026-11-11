@@ -32,7 +32,7 @@ export function DealUpdateForm({ deal, initialStage, onClose }: {
 }) {
   const router = useRouter();
   const [stage, setStage] = useState(initialStage || deal.stage);
-  const [nextContactDate, setNextContactDate] = React.useState(dateInputValue(deal.next_contact_at));
+  const [nextContactDate, setNextContactDate] = useState(dateInputValue(deal.next_contact_at));
   const [state, formAction, pending] = useActionState(updateDealAction, {} as FormActionState);
 
   useEffect(() => {
