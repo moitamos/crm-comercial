@@ -6,7 +6,7 @@ import { ClientEditForm } from "@/components/crm/client-edit-form";
 import { getServicePackageLabel } from "@/lib/crm/packages";
 
 type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string }> };
-type SourceRow = Record<string, string | null>;
+type SourceRow = Record<string, unknown>;
 type Service = {
   id: string;
   service_number: string;
@@ -28,24 +28,36 @@ type Administrator = {
   source_data: SourceRow | null;
 };
 
-function sourceRows(value: Service["source_data"] | Administrator["source_data"]): SourceRow[] {
+function sourceRows(value: unknown): SourceRow[] {
   if (!value) return [];
-  return Array.isArray(value) ? value : [value as SourceRow];
+  if (Array.isArray(value)) {
+    return value.filter((item): item is SourceRow => Boolean(item) && typeof item === "object" && !Array.isArray(item));
+  }
+  return typeof value === "object" ? [value as SourceRow] : [];
+}
+
+function normalizedKey(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 function valueFrom(rows: SourceRow[], names: string[]): string | null {
+  const wanted = new Set(names.map(normalizedKey));
   for (const row of rows) {
-    for (const name of names) {
-      const value = row[name];
-      if (value && value.trim()) return value;
+    for (const [key, raw] of Object.entries(row)) {
+      if (!wanted.has(normalizedKey(key)) || raw === null || raw === undefined) continue;
+      const value = String(raw).trim();
+      if (value) return value;
     }
   }
   return null;
 }
 
 function dateLabel(value: string | null) {
-  if (!value) return "Não indicada";
-  const date = new Date(value + "T12:00:00");
+  if (!value) return "Sem data registada";
+  const normalized = /^\d{8}$/.test(value)
+    ? value.slice(0, 4) + "-" + value.slice(4, 6) + "-" + value.slice(6, 8)
+    : value;
+  const date = new Date(normalized + (normalized.length === 10 ? "T12:00:00" : ""));
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("pt-PT");
 }
 
@@ -69,7 +81,7 @@ function DataGrid({ data }: { data: SourceRow }) {
       {fields.map(([key, value]) => (
         <div key={key} className="min-w-0">
           <dt className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{key}</dt>
-          <dd className="mt-1 break-words text-xs leading-5 text-slate-700">{value}</dd>
+          <dd className="mt-1 break-words text-xs leading-5 text-slate-700">{String(value)}</dd>
         </div>
       ))}
     </dl>
@@ -82,13 +94,13 @@ export default async function ClientDetailPage({ params, searchParams }: Props) 
   const supabase = await createClient();
   const { data: client, error } = await supabase
     .from("clients")
-    .select("id, full_name, nif, nic, ncc, phone, email, address, notes, created_at")
+    .select("id, full_name, nif, nic, ncc, phone, email, address, notes")
     .eq("id", id)
     .maybeSingle();
 
   if (error || !client) notFound();
 
-  const [servicesResult, administratorsResult] = await Promise.all([
+  const [servicesResult, administratorsResult, importDetailsResult] = await Promise.all([
     supabase
       .from("services")
       .select("id, service_number, service_type, package_name, current_monthly_fee, loyalty_end_date, loyalty_conclusion_date, is_active, source_data")
@@ -100,11 +112,25 @@ export default async function ClientDetailPage({ params, searchParams }: Props) 
       .select("id, full_name, phone_numbers, email, marketing_permission, observations, source_data")
       .eq("client_id", id)
       .order("full_name", { ascending: true }),
+    supabase
+      .from("client_import_details")
+      .select("source_data")
+      .eq("client_id", id)
+      .eq("source_system", "PIU")
+      .maybeSingle(),
   ]);
 
   const services = (servicesResult.data ?? []) as Service[];
   const administrators = (administratorsResult.data ?? []) as Administrator[];
   const activeServices = services.filter((service) => service.is_active);
+  const sourceRowsForClient = [
+    ...sourceRows(importDetailsResult.data?.source_data),
+    ...services.flatMap((service) => sourceRows(service.source_data)),
+    ...administrators.flatMap((administrator) => sourceRows(administrator.source_data)),
+  ];
+
+  const nic = client.nic?.trim() || valueFrom(sourceRowsForClient, ["NIC", "N.º cliente", "Nº cliente", "N cliente"]) || "—";
+  const ncc = client.ncc?.trim() || valueFrom(sourceRowsForClient, ["NCC", "N.º conta", "Nº conta", "N conta"]) || "—";
   const administratorPhones = Array.from(new Set(
     administrators.flatMap((item) => item.phone_numbers ?? []).map((item) => item.trim()).filter(Boolean)
   ));
@@ -121,9 +147,9 @@ export default async function ClientDetailPage({ params, searchParams }: Props) 
       </Link>
 
       {search.created === "1" && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Cliente criado com sucesso.</p>}
-      {(servicesResult.error || administratorsResult.error) && (
+      {(servicesResult.error || administratorsResult.error || importDetailsResult.error) && (
         <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Não foi possível carregar toda a informação de serviços ou administradores. Atualiza a página ou contacta o administrador.
+          Não foi possível carregar toda a informação de serviços ou detalhes importados. Atualiza a página ou contacta o administrador.
         </p>
       )}
 
@@ -141,13 +167,13 @@ export default async function ClientDetailPage({ params, searchParams }: Props) 
             <span className="w-fit rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600">
               {activeServices.length} serviços ativos · {services.length} no total
             </span>
-            <ClientEditForm client={client} />
+            <ClientEditForm client={{ ...client, nic: nic === "—" ? null : nic, ncc: ncc === "—" ? null : ncc }} />
           </div>
         </div>
 
         <div className="mt-6 grid gap-4 border-t border-slate-100 pt-5 sm:grid-cols-2 lg:grid-cols-3">
-          <div><p className="text-xs text-slate-400">NIC · N.º cliente</p><p className="mt-1 text-sm font-medium text-slate-800">{client.nic ?? "—"}</p></div>
-          <div><p className="text-xs text-slate-400">NCC · N.º conta</p><p className="mt-1 text-sm font-medium text-slate-800">{client.ncc ?? "—"}</p></div>
+          <div><p className="text-xs text-slate-400">NIC · N.º cliente</p><p className="mt-1 text-sm font-medium text-slate-800">{nic}</p></div>
+          <div><p className="text-xs text-slate-400">NCC · N.º conta</p><p className="mt-1 text-sm font-medium text-slate-800">{ncc}</p></div>
           <div>
             <p className="text-xs text-slate-400">Telefone / Telemóvel</p>
             <div className="mt-1 flex flex-col items-start gap-1.5">
@@ -155,7 +181,6 @@ export default async function ClientDetailPage({ params, searchParams }: Props) 
                 <a key={phone} href={"tel:" + phone} className="inline-flex items-center gap-2 text-sm text-blue-700 hover:underline"><Phone size={14} />{phone}</a>
               )) : <span className="text-sm text-slate-700">—</span>}
             </div>
-            {!client.phone && contactPhones.length > 0 && <p className="mt-1 text-[10px] text-slate-400">Contacto de administrador associado</p>}
           </div>
           <div>
             <p className="text-xs text-slate-400">Email</p>
@@ -164,9 +189,7 @@ export default async function ClientDetailPage({ params, searchParams }: Props) 
                 <a key={email} href={"mailto:" + email} className="inline-flex max-w-full items-center gap-2 break-all text-sm text-blue-700 hover:underline"><Mail size={14} className="shrink-0" />{email}</a>
               )) : <span className="text-sm text-slate-700">—</span>}
             </div>
-            {!client.email && contactEmails.length > 0 && <p className="mt-1 text-[10px] text-slate-400">Contacto de administrador associado</p>}
           </div>
-          <div><p className="text-xs text-slate-400">Criado em</p><p className="mt-1 text-sm font-medium text-slate-800">{new Date(client.created_at).toLocaleDateString("pt-PT")}</p></div>
           {client.address && <div className="sm:col-span-2 lg:col-span-3"><p className="text-xs text-slate-400">Morada</p><p className="mt-1 inline-flex items-start gap-2 text-sm text-slate-700"><MapPin size={14} className="mt-0.5 shrink-0" />{client.address}</p></div>}
         </div>
       </section>
@@ -174,47 +197,38 @@ export default async function ClientDetailPage({ params, searchParams }: Props) 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 px-5 py-4">
           <h2 className="font-semibold text-slate-900">Serviços e fidelizações</h2>
-          <p className="mt-1 text-xs text-slate-500">A data de fim de fidelização importada é a referência para as renovações.</p>
         </div>
         {services.length === 0 ? (
           <p className="px-5 py-8 text-sm text-slate-500">Este cliente ainda não tem serviços registados.</p>
         ) : (
-          <div className="space-y-3 p-4 sm:p-5">
-            {services.map((service) => {
-              const rows = sourceRows(service.source_data);
-              const packageLabel = getServicePackageLabel(service) ?? service.package_name ?? "Pacote não indicado";
-              const state = valueFrom(rows, ["Estado Fid. Pacote", "Estado Fidelização", "Estado Fidelização Cartões", "PERIODO_REFID"]);
-              const campaigns = [...new Set(rows.map((row) => row["Tipo de Campanha"]).filter((value): value is string => Boolean(value)))];
-              return (
-                <article key={service.id} className="overflow-hidden rounded-xl border border-slate-200">
-                  <div className="flex flex-col justify-between gap-3 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full bg-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-800">{serviceLabel(service.service_type)}</span>
-                      <span className="font-mono text-sm font-semibold text-slate-800">{service.service_number}</span>
-                      <span className={"rounded-full px-2.5 py-1 text-[11px] font-medium " + (service.is_active ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600")}>{service.is_active ? "Ativo" : "Inativo"}</span>
-                    </div>
-                    <div className="text-sm font-semibold text-slate-800">{packageLabel}</div>
-                  </div>
-                  <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <div><p className="text-[11px] uppercase tracking-wide text-slate-400">Fim fidelização atual</p><p className="mt-1 text-sm font-medium text-slate-800">{dateLabel(service.loyalty_end_date)}</p></div>
-                    <div><p className="text-[11px] uppercase tracking-wide text-slate-400">Data conclusão</p><p className="mt-1 text-sm text-slate-800">{dateLabel(service.loyalty_conclusion_date)}</p></div>
-                    <div><p className="text-[11px] uppercase tracking-wide text-slate-400">Estado fidelização</p><p className="mt-1 text-sm text-slate-800">{state ?? "Não indicado"}</p></div>
-                    <div><p className="text-[11px] uppercase tracking-wide text-slate-400">Mensalidade</p><p className="mt-1 text-sm text-slate-800">{moneyLabel(service.current_monthly_fee)}</p></div>
-                    {campaigns.length > 0 && <div className="sm:col-span-2 lg:col-span-4"><p className="text-[11px] uppercase tracking-wide text-slate-400">Tipo de campanha</p><div className="mt-1 flex flex-wrap gap-2">{campaigns.map((item) => <span key={item} className="rounded-full bg-violet-50 px-2.5 py-1 text-xs text-violet-800">{item}</span>)}</div></div>}
-                  </div>
-                  {rows.length > 0 && (
-                    <details className="border-t border-slate-100">
-                      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-xs font-semibold text-blue-700 hover:bg-slate-50">
-                        Todos os campos importados deste serviço
-                      </summary>
-                      <div className="space-y-4 px-4 pb-4">
-                        {rows.map((row, index) => <div key={index} className="rounded-lg bg-slate-50 p-3"><DataGrid data={row} /></div>)}
-                      </div>
-                    </details>
-                  )}
-                </article>
-              );
-            })}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-5 py-3 font-semibold">N.º serviço</th>
+                  <th className="px-5 py-3 font-semibold">Pacote</th>
+                  <th className="px-5 py-3 font-semibold">Fidelização</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {services.map((service) => {
+                  const rows = sourceRows(service.source_data);
+                  const packageLabel = getServicePackageLabel(service) ?? service.package_name ?? serviceLabel(service.service_type);
+                  const fidelityEnd = service.loyalty_end_date ?? valueFrom(rows, ["Data Fim Fidelização", "DATA_FIM_FIDELIZAÇÃO", "Fim Fidelização"]);
+                  const fidelityState = valueFrom(rows, ["Estado Fid. Pacote", "Estado Fidelização", "Estado Fidelização Cartões", "PERIODO_REFID"]);
+                  return (
+                    <tr key={service.id}>
+                      <td className="px-5 py-3 font-medium text-slate-800">{service.service_number}</td>
+                      <td className="px-5 py-3 font-semibold text-slate-800">{packageLabel}</td>
+                      <td className="px-5 py-3 text-slate-700">
+                        <span>{dateLabel(fidelityEnd)}</span>
+                        {fidelityState && <span className="ml-2 text-xs text-slate-400">{fidelityState}</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </section>
@@ -245,7 +259,6 @@ export default async function ClientDetailPage({ params, searchParams }: Props) 
       </section>
 
       {client.notes && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="font-semibold text-slate-900">Notas internas</h2><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{client.notes}</p></section>}
-      <p className="text-[11px] text-slate-400">Ficha criada em {dateLabel(client.created_at.slice(0, 10))}</p>
     </main>
   );
 }
