@@ -207,6 +207,9 @@ function dealActivityError(message: string) {
   if (message.includes("1 e 50")) return "Seleciona entre 1 e 50 registos do histórico.";
   if (message.includes("já não existem")) return "Um ou mais registos já foram eliminados ou não pertencem a este negócio.";
   if (message.includes("5.000")) return "O texto não pode ultrapassar 5.000 caracteres.";
+  if (message.includes("não pode ficar vazia")) return "A observação não pode ficar vazia.";
+  if (message.includes("Só podes editar")) return "Só podes editar observações e tentativas de contacto.";
+  if (message.includes("já não existe") || message.includes("não pertence a este negócio")) return "Esta entrada já não existe ou não pertence a este negócio.";
   return "Não foi possível registar a atividade. Atualiza a página e tenta novamente.";
 }
 
@@ -342,6 +345,41 @@ export async function deleteDealActivityEntriesAction(
     removedActivityIds: activityIds as string[],
     ...snapshot,
   };
+}
+
+export async function editDealActivityEntryAction(
+  _previous: FormActionState,
+  formData: FormData
+): Promise<FormActionState> {
+  const context = await getActiveUser();
+  if (!context.userId) return { error: context.error ?? "Sessão inválida." };
+
+  const dealId = String(formData.get("deal_id") ?? "").trim();
+  const activityId = String(formData.get("activity_id") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  if (!uuidPattern.test(dealId) || !uuidPattern.test(activityId)) {
+    return { error: "Negócio ou registo do histórico inválido." };
+  }
+  if (!description) return { error: "A observação não pode ficar vazia." };
+  if (description.length > 5000) return { error: "O texto não pode ultrapassar 5.000 caracteres." };
+
+  const { error } = await context.supabase.rpc("edit_deal_activity_entry", {
+    p_deal_id: dealId,
+    p_activity_id: activityId,
+    p_description: description,
+  });
+
+  if (error) {
+    console.error("[CRM_EDIT_DEAL_ACTIVITY_ENTRY]", { code: error.code, message: error.message });
+    return { error: dealActivityError(error.message ?? "") };
+  }
+
+  const snapshot = await loadDealActivitySnapshot(context.supabase, dealId);
+  revalidatePath("/pipeline");
+  revalidatePath("/dashboard");
+  return { success: "Entrada do histórico atualizada.", ...snapshot };
 }
 
 // Keep the previous form action compatible with the new timestamped activity log.
