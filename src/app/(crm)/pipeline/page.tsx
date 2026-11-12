@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { BriefcaseBusiness, CalendarClock, Clock3, Search, TrendingUp, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { PipelineBoard, type PipelineDeal } from "@/components/crm/pipeline-board";
+import { PipelineBoard, type PipelineActivity, type PipelineDeal } from "@/components/crm/pipeline-board";
 import { PipelineMonthControls } from "@/components/crm/pipeline-month-controls";
 
 type Props = { searchParams: Promise<{ q?: string; sort?: string; month?: string }> };
@@ -18,8 +18,17 @@ type DealRow = {
   notes: string | null;
   eligibility_month: string | null;
 };
-type ClientRow = { id: string; full_name: string; nif: string };
+type ClientRow = { id: string; full_name: string; nif: string; phone: string | null; email: string | null };
 type DealServiceRow = { id: string; deal_id: string; service_id: string; decision: string | null; future_package: string | null };
+type InteractionRow = {
+  id: string;
+  deal_id: string;
+  commercial_id: string;
+  event_type: string;
+  description: string | null;
+  event_data: Record<string, unknown> | null;
+  occurred_at: string;
+};
 type ServiceRow = { id: string; service_number: string; service_type: string; package_name: string | null; loyalty_end_date: string | null };
 type CandidateServiceRow = { id: string; client_id: string; loyalty_end_date: string };
 
@@ -33,9 +42,11 @@ const STAGES = [
 ] as const;
 const DEAL_SORTS = [
   { value: "created_desc", label: "Criação: mais recente para mais antiga" },
+  { value: "created_asc", label: "Criação: mais antiga para mais recente" },
   { value: "loyalty_asc", label: "Fidelização: mais próxima primeiro" },
   { value: "loyalty_desc", label: "Fidelização: mais distante primeiro" },
   { value: "contact_desc", label: "Contacto: mais recente primeiro" },
+  { value: "contact_asc", label: "Contacto: mais antigo primeiro" },
 ] as const;
 
 async function loadChunks<T>(
@@ -142,12 +153,18 @@ export default async function PipelinePage({ searchParams }: Props) {
   const allDeals = (dealsResult.data ?? []) as DealRow[];
   const dealIds = allDeals.map((deal) => deal.id);
   const clientIds = Array.from(new Set(allDeals.map((deal) => deal.client_id)));
-  const [clientsResult, dealServicesResult] = await Promise.all([
+  const [clientsResult, dealServicesResult, interactionsResult] = await Promise.all([
     loadChunks<ClientRow>(clientIds, async (batch) =>
-      await supabase.from("clients").select("id, full_name, nif").in("id", batch)
+      await supabase.from("clients").select("id, full_name, nif, phone, email").in("id", batch)
     ),
     loadChunks<DealServiceRow>(dealIds, async (batch) =>
       await supabase.from("deal_services").select("id, deal_id, service_id, decision, future_package").in("deal_id", batch)
+    ),
+    loadChunks<InteractionRow>(dealIds, async (batch) =>
+      await supabase.from("interactions")
+        .select("id, deal_id, commercial_id, event_type, description, event_data, occurred_at")
+        .in("deal_id", batch)
+        .order("occurred_at", { ascending: false })
     ),
   ]);
 
@@ -159,6 +176,13 @@ export default async function PipelinePage({ searchParams }: Props) {
 
   const clients = new Map(clientsResult.data.map((client) => [client.id, client]));
   const services = new Map(servicesResult.data.map((service) => [service.id, service]));
+  const activitiesByDeal = new Map<string, PipelineActivity[]>();
+  for (const activity of interactionsResult.data) {
+    const current = activitiesByDeal.get(activity.deal_id) ?? [];
+    current.push(activity);
+    activitiesByDeal.set(activity.deal_id, current);
+  }
+
   const servicesByDeal = new Map<string, ServiceRow[]>();
   for (const link of dealServices) {
     const service = services.get(link.service_id);
@@ -172,6 +196,7 @@ export default async function PipelinePage({ searchParams }: Props) {
     ...deal,
     client: clients.get(deal.client_id) ?? null,
     services: servicesByDeal.get(deal.id) ?? [],
+    activities: activitiesByDeal.get(deal.id) ?? [],
   }));
 
   const currentMonth = currentMonthStart();
@@ -214,32 +239,40 @@ export default async function PipelinePage({ searchParams }: Props) {
     return normalized(searchable).includes(searchNeedle);
   });
   const sortedFiltered = [...filtered].sort((left, right) => {
-    const created = right.created_at.localeCompare(left.created_at);
+    const createdDesc = right.created_at.localeCompare(left.created_at);
+    const createdAsc = left.created_at.localeCompare(right.created_at);
+    if (selectedSort === "created_asc") return createdAsc;
     if (selectedSort === "loyalty_asc") {
       const leftDate = left.services.map((service) => service.loyalty_end_date).filter((date): date is string => Boolean(date)).sort()[0] ?? null;
       const rightDate = right.services.map((service) => service.loyalty_end_date).filter((date): date is string => Boolean(date)).sort()[0] ?? null;
-      if (!leftDate && !rightDate) return created;
+      if (!leftDate && !rightDate) return createdDesc;
       if (!leftDate) return 1;
       if (!rightDate) return -1;
-      return leftDate.localeCompare(rightDate) || created;
+      return leftDate.localeCompare(rightDate) || createdDesc;
     }
     if (selectedSort === "loyalty_desc") {
       const leftDates = left.services.map((service) => service.loyalty_end_date).filter((date): date is string => Boolean(date)).sort();
       const rightDates = right.services.map((service) => service.loyalty_end_date).filter((date): date is string => Boolean(date)).sort();
       const leftDate = leftDates[leftDates.length - 1] ?? null;
       const rightDate = rightDates[rightDates.length - 1] ?? null;
-      if (!leftDate && !rightDate) return created;
+      if (!leftDate && !rightDate) return createdDesc;
       if (!leftDate) return 1;
       if (!rightDate) return -1;
-      return rightDate.localeCompare(leftDate) || created;
+      return rightDate.localeCompare(leftDate) || createdDesc;
     }
     if (selectedSort === "contact_desc") {
-      if (!left.last_contact_at && !right.last_contact_at) return created;
+      if (!left.last_contact_at && !right.last_contact_at) return createdDesc;
       if (!left.last_contact_at) return 1;
       if (!right.last_contact_at) return -1;
-      return right.last_contact_at.localeCompare(left.last_contact_at) || created;
+      return right.last_contact_at.localeCompare(left.last_contact_at) || createdDesc;
     }
-    return created;
+    if (selectedSort === "contact_asc") {
+      if (!left.last_contact_at && !right.last_contact_at) return createdDesc;
+      if (!left.last_contact_at) return 1;
+      if (!right.last_contact_at) return -1;
+      return left.last_contact_at.localeCompare(right.last_contact_at) || createdDesc;
+    }
+    return createdDesc;
   });
 
   const stageCounts = new Map<string, number>(STAGES.map((stage) => [stage.value, 0]));
@@ -255,7 +288,7 @@ export default async function PipelinePage({ searchParams }: Props) {
     : candidatesByMonth.get(selectedMonth)?.size ?? 0;
 
   const queryError = dealsResult.error || clientsResult.error || dealServicesResult.error
-    || servicesResult.error || candidateServicesResult.error;
+    || interactionsResult.error || servicesResult.error || candidateServicesResult.error;
   const truncated = (dealsResult.count ?? allDeals.length) > allDeals.length;
 
   return (
