@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import type { FormActionState } from "@/lib/crm/types";
+import type { DealActivityStateItem, DealSnapshotState, FormActionState } from "@/lib/crm/types";
 
 function isValidPhone(value: string | null) { return !value || /^\+?[0-9]+$/.test(value); }
 function isValidEmail(value: string | null) { return !value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value); }
@@ -204,8 +204,39 @@ function dealActivityError(message: string) {
   if (message.includes("voltar a contactar")) return "Indica a data em que devemos voltar a contactar o cliente.";
   if (message.includes("motivo")) return "Indica o motivo pelo qual o negócio foi perdido.";
   if (message.includes("observação") || message.includes("observacao")) return "Escreve a observação antes de guardar.";
+  if (message.includes("1 e 50")) return "Seleciona entre 1 e 50 registos do histórico.";
+  if (message.includes("já não existem")) return "Um ou mais registos já foram eliminados ou não pertencem a este negócio.";
   if (message.includes("5.000")) return "O texto não pode ultrapassar 5.000 caracteres.";
   return "Não foi possível registar a atividade. Atualiza a página e tenta novamente.";
+}
+
+async function loadDealActivitySnapshot(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  dealId: string
+): Promise<{ activities?: DealActivityStateItem[]; dealSnapshot?: DealSnapshotState }> {
+  const [activitiesResult, dealResult] = await Promise.all([
+    supabase.from("interactions")
+      .select("id, deal_id, commercial_id, event_type, description, event_data, occurred_at")
+      .eq("deal_id", dealId)
+      .order("occurred_at", { ascending: false })
+      .order("id", { ascending: false }),
+    supabase.from("deals")
+      .select("stage, last_contact_at, next_contact_at, lost_reason")
+      .eq("id", dealId)
+      .maybeSingle(),
+  ]);
+  if (activitiesResult.error) {
+    console.error("[CRM_LOAD_DEAL_ACTIVITIES]", activitiesResult.error.message);
+  }
+  if (dealResult.error) {
+    console.error("[CRM_LOAD_DEAL_SNAPSHOT]", dealResult.error.message);
+  }
+  return {
+    activities: activitiesResult.error ? undefined : (activitiesResult.data ?? []) as DealActivityStateItem[],
+    dealSnapshot: dealResult.error || !dealResult.data
+      ? undefined
+      : dealResult.data as DealSnapshotState,
+  };
 }
 
 export async function recordDealActivityAction(
@@ -260,12 +291,57 @@ export async function recordDealActivityAction(
     return { error: dealActivityError(error.message ?? "") };
   }
 
+  const snapshot = await loadDealActivitySnapshot(context.supabase, dealId);
   revalidatePath("/pipeline");
   revalidatePath("/dashboard");
 
-  if (action === "observation") return { success: "Observação registada com data e hora." };
-  if (action === "contact_attempt") return { success: "Tentativa de contacto registada." };
-  return { success: "Negócio atualizado e alteração registada." };
+  if (action === "observation") return { success: "Observação registada com data e hora.", ...snapshot };
+  if (action === "contact_attempt") return { success: "Tentativa de contacto registada.", ...snapshot };
+  return { success: "Negócio atualizado e alteração registada.", ...snapshot };
+}
+
+export async function deleteDealActivityEntriesAction(
+  _previous: FormActionState,
+  formData: FormData
+): Promise<FormActionState> {
+  const context = await getActiveUser();
+  if (!context.userId) return { error: context.error ?? "Sessão inválida." };
+
+  const dealId = String(formData.get("deal_id") ?? "").trim();
+  let activityIds: unknown;
+  try {
+    activityIds = JSON.parse(String(formData.get("activity_ids") ?? "[]"));
+  } catch {
+    return { error: "A seleção do histórico é inválida." };
+  }
+
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidPattern.test(dealId)) return { error: "Negócio inválido." };
+  if (!Array.isArray(activityIds) || activityIds.length < 1 || activityIds.length > 50 ||
+      !activityIds.every((id) => typeof id === "string" && uuidPattern.test(id)) ||
+      new Set(activityIds).size !== activityIds.length) {
+    return { error: "Seleciona entre 1 e 50 registos válidos do histórico." };
+  }
+
+  const { data, error } = await context.supabase.rpc("delete_deal_activity_entries", {
+    p_deal_id: dealId,
+    p_activity_ids: activityIds,
+  });
+  if (error) {
+    console.error("[CRM_DELETE_DEAL_ACTIVITY_ENTRIES]", { code: error.code, message: error.message });
+    return { error: dealActivityError(error.message ?? "") };
+  }
+
+  const snapshot = await loadDealActivitySnapshot(context.supabase, dealId);
+  revalidatePath("/pipeline");
+  revalidatePath("/dashboard");
+
+  const deleted = typeof data === "number" ? data : Number(data ?? activityIds.length);
+  return {
+    success: deleted === 1 ? "1 registo eliminado do histórico." : deleted + " registos eliminados do histórico.",
+    removedActivityIds: activityIds as string[],
+    ...snapshot,
+  };
 }
 
 // Keep the previous form action compatible with the new timestamped activity log.
