@@ -20,7 +20,15 @@ type DealRow = {
 };
 type ClientRow = { id: string; full_name: string; nif: string; phone: string | null; email: string | null };
 type ClientAdminContactRow = { id: string; client_id: string; phone_numbers: string[] | null; email: string | null };
-type DealServiceRow = { id: string; deal_id: string; service_id: string; decision: string | null; future_package: string | null };
+type DealServiceRow = {
+  id: string;
+  deal_id: string;
+  service_id: string;
+  decision: string | null;
+  future_package: string | null;
+  loss_decision: "recycle" | "close" | null;
+  loss_decided_at: string | null;
+};
 type InteractionRow = {
   id: string;
   deal_id: string;
@@ -113,13 +121,6 @@ function eligibilityMonth(value: string) {
   return targetYear + "-" + String(targetMonth).padStart(2, "0") + "-01";
 }
 
-function monthLabel(value: string) {
-  if (value === "unassigned") return "Sem mês definido";
-  const date = new Date(value + "T12:00:00Z");
-  const label = date.toLocaleDateString("pt-PT", { month: "long", year: "numeric", timeZone: "UTC" });
-  return label.charAt(0).toLocaleUpperCase("pt-PT") + label.slice(1);
-}
-
 function validMonth(value: string | undefined) {
   return Boolean(value && /^\d{4}-(0[1-9]|1[0-2])-01$/.test(value));
 }
@@ -159,7 +160,7 @@ export default async function PipelinePage({ searchParams }: Props) {
       await supabase.from("clients").select("id, full_name, nif, phone, email").in("id", batch)
     ),
     loadChunks<DealServiceRow>(dealIds, async (batch) =>
-      await supabase.from("deal_services").select("id, deal_id, service_id, decision, future_package").in("deal_id", batch)
+      await supabase.from("deal_services").select("id, deal_id, service_id, decision, future_package, loss_decision, loss_decided_at").in("deal_id", batch)
     ),
     loadChunks<InteractionRow>(dealIds, async (batch) =>
       await supabase.from("interactions")
@@ -228,7 +229,23 @@ export default async function PipelinePage({ searchParams }: Props) {
       .filter((deal) => deal.deal_type === "portfolio_renewal" && deal.eligibility_month)
       .map((deal) => deal.client_id + "|" + deal.eligibility_month)
   );
-  const linkedServiceIds = new Set(dealServices.map((link) => link.service_id));
+  const stageByDealId = new Map(allDeals.map((deal) => [deal.id, deal.stage]));
+  const linksByServiceId = new Map<string, DealServiceRow[]>();
+  for (const link of dealServices) {
+    const current = linksByServiceId.get(link.service_id) ?? [];
+    current.push(link);
+    linksByServiceId.set(link.service_id, current);
+  }
+  const linkedServiceIds = new Set<string>();
+  for (const [serviceId, links] of linksByServiceId) {
+    const hasOpenDeal = links.some((link) => stageByDealId.get(link.deal_id) !== "lost");
+    const latestDecision = links
+      .filter((link) => link.loss_decision)
+      .sort((left, right) => (right.loss_decided_at ?? "").localeCompare(left.loss_decided_at ?? ""))[0]?.loss_decision;
+    if (hasOpenDeal || (links.length > 0 && latestDecision !== "recycle")) {
+      linkedServiceIds.add(serviceId);
+    }
+  }
   const candidatesByMonth = new Map<string, Set<string>>();
   for (const service of (candidateServicesResult.data ?? []) as CandidateServiceRow[]) {
     if (!service.loyalty_end_date || linkedServiceIds.has(service.id)) continue;
@@ -318,9 +335,7 @@ export default async function PipelinePage({ searchParams }: Props) {
     <main className="mx-auto max-w-none space-y-5 px-4 py-6 sm:px-6 xl:px-7">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
         <div>
-          <p className="text-sm text-slate-500">Gestão de oportunidades comerciais</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">Funil de vendas</h1>
-          <p className="mt-1 text-sm text-slate-500">Os negócios estão organizados pelo mês em que entram no período de renovação.</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Funil de vendas</h1>
         </div>
         <Link href="/clients" className="inline-flex items-center gap-2 self-start rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:self-auto">
           <Users size={16} /> Consultar clientes
@@ -368,16 +383,6 @@ export default async function PipelinePage({ searchParams }: Props) {
           <Link href={"/pipeline?month=" + encodeURIComponent(selectedMonth)} className="rounded-lg px-3 py-2 text-center text-sm font-medium text-slate-500 hover:bg-slate-50">Limpar</Link>
         )}
       </form>
-
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-slate-500">
-          {filtered.length.toLocaleString("pt-PT")} negócios encontrados · {monthLabel(selectedMonth)}
-          {(query || selectedSort !== "created_desc") ? " · Filtros aplicados" : ""}
-        </p>
-        <p className="hidden items-center gap-1 text-xs text-slate-400 sm:flex">
-          <BriefcaseBusiness size={13} /> {STAGES.length} fases
-        </p>
-      </div>
 
       <PipelineBoard deals={sortedFiltered} />
     </main>
