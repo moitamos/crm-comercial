@@ -14,7 +14,6 @@ import {
 import { getServicePackageLabel } from "@/lib/crm/packages";
 import { DealUpdateForm } from "@/components/crm/deal-update-form";
 import { PipelineMonthMove } from "@/components/crm/pipeline-month-move";
-import type { PipelineMonthOption } from "@/components/crm/pipeline-month-controls";
 
 export type PipelineDeal = {
   id: string;
@@ -65,7 +64,7 @@ function isOverdue(deal: PipelineDeal) {
   return new Date(deal.next_contact_at).getTime() < Date.now();
 }
 
-export function PipelineBoard({ deals, months }: { deals: PipelineDeal[]; months: PipelineMonthOption[] }) {
+export function PipelineBoard({ deals }: { deals: PipelineDeal[] }) {
   const [draggedDealId, setDraggedDealId] = useState<string | null>(null);
   const [dropStage, setDropStage] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ deal: PipelineDeal; targetStage: string } | null>(null);
@@ -237,7 +236,6 @@ export function PipelineBoard({ deals, months }: { deals: PipelineDeal[]; months
                         <PipelineMonthMove
                           dealId={deal.id}
                           currentMonth={deal.eligibility_month}
-                          months={months}
                         />
                       </article>
                     );
