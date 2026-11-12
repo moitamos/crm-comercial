@@ -5,16 +5,20 @@ import { useRouter } from "next/navigation";
 import {
   CalendarClock,
   CheckCircle2,
+  Circle,
   Clock3,
   Mail,
   MessageSquarePlus,
   Phone,
   PhoneCall,
+  Pencil,
+  Save,
   Trash2,
   X,
 } from "lucide-react";
 import {
   deleteDealActivityEntriesAction,
+  editDealActivityEntryAction,
   recordDealActivityAction,
 } from "@/lib/crm/actions";
 import { getServicePackageLabel } from "@/lib/crm/packages";
@@ -40,6 +44,7 @@ type Service = {
 };
 type Deal = {
   id: string;
+  created_at: string;
   stage: string;
   last_contact_at: string | null;
   next_contact_at: string | null;
@@ -114,11 +119,14 @@ export function DealDetailsDialog({ deal, initialStage, onClose }: {
   const [nextContactAt, setNextContactAt] = useState(deal.next_contact_at);
   const [activities, setActivities] = useState<Activity[]>(deal.activities ?? []);
   const [selectedActivityIds, setSelectedActivityIds] = useState<string[]>([]);
+  const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
+  const [editDescription, setEditDescription] = useState("");
 
   const [updateState, updateAction, updatePending] = useActionState(recordDealActivityAction, {} as FormActionState);
   const [contactState, contactAction, contactPending] = useActionState(recordDealActivityAction, {} as FormActionState);
   const [noteState, noteAction, notePending] = useActionState(recordDealActivityAction, {} as FormActionState);
   const [deleteState, deleteAction, deletePending] = useActionState(deleteDealActivityEntriesAction, {} as FormActionState);
+  const [editState, editAction, editPending] = useActionState(editDealActivityEntryAction, {} as FormActionState);
 
   function applySnapshot(snapshot?: DealSnapshotState, nextActivities?: Activity[]) {
     if (snapshot) {
@@ -139,6 +147,8 @@ export function DealDetailsDialog({ deal, initialStage, onClose }: {
     setNextContactAt(deal.next_contact_at);
     setActivities(deal.activities ?? []);
     setSelectedActivityIds([]);
+    setEditingActivityId(null);
+    setEditDescription("");
   }, [deal.id, deal.stage, deal.last_contact_at, deal.next_contact_at, deal.lost_reason, deal.activities, initialStage]);
 
   useEffect(() => {
@@ -163,8 +173,18 @@ export function DealDetailsDialog({ deal, initialStage, onClose }: {
     if (!deleteState.success) return;
     applySnapshot(deleteState.dealSnapshot, deleteState.activities);
     setSelectedActivityIds([]);
+    setEditingActivityId(null);
     router.refresh();
   }, [deleteState, router]);
+
+  useEffect(() => {
+    if (!editState.success) return;
+    applySnapshot(editState.dealSnapshot, editState.activities);
+    setSelectedActivityIds([]);
+    setEditingActivityId(null);
+    setEditDescription("");
+    router.refresh();
+  }, [editState, router]);
 
   useEffect(() => {
     function keyDown(event: KeyboardEvent) {
@@ -175,12 +195,20 @@ export function DealDetailsDialog({ deal, initialStage, onClose }: {
   }, [onClose]);
 
   function toggleActivity(id: string) {
-    setSelectedActivityIds((current) =>
-      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
-    );
+    setEditingActivityId(null);
+    setSelectedActivityIds((current) => {
+      if (current.includes(id)) return current.filter((item) => item !== id);
+      if (current.length >= 50) return current;
+      return [...current, id];
+    });
   }
 
-  const allSelected = activities.length > 0 && selectedActivityIds.length === activities.length;
+  const allSelected = activities.length > 0 && selectedActivityIds.length === Math.min(activities.length, 50);
+  const selectedActivity = selectedActivityIds.length === 1
+    ? activities.find((activity) => activity.id === selectedActivityIds[0]) ?? null
+    : null;
+  const canEditSelected = Boolean(selectedActivity &&
+    ["observation", "contact_attempt"].includes(selectedActivity.event_type));
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/60 p-3 backdrop-blur-sm sm:p-6"
@@ -291,36 +319,36 @@ export function DealDetailsDialog({ deal, initialStage, onClose }: {
             </form>
           </section>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <section className="rounded-xl border border-slate-200 p-4">
+          <div className="grid items-stretch gap-3 sm:grid-cols-2">
+            <section className="flex h-full flex-col rounded-xl border border-slate-200 p-4">
               <div className="mb-2 flex items-center gap-2"><PhoneCall size={16} className="text-blue-700" /><h3 className="text-sm font-semibold text-slate-900">Tentativa de contacto</h3></div>
-              <p className="mb-3 text-xs leading-5 text-slate-500">A data e a hora são registadas automaticamente.</p>
-              <form action={contactAction} className="space-y-2">
+              <p className="mb-3 min-h-10 text-xs leading-5 text-slate-500">A data e a hora são registadas automaticamente.</p>
+              <form action={contactAction} className="mt-auto space-y-2">
                 <input type="hidden" name="deal_id" value={deal.id} /><input type="hidden" name="action" value="contact_attempt" />
-                <textarea name="description" rows={2} maxLength={5000} placeholder="Resultado da tentativa (opcional)..." className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-600" />
+                <textarea name="description" rows={2} maxLength={5000} placeholder="Resultado da tentativa (opcional)..." className="min-h-16 w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-600" />
                 {contactState.error && <p role="alert" className="text-xs text-rose-700">{contactState.error}</p>}
                 {contactState.success && <p role="status" className="text-xs text-emerald-700">{contactState.success}</p>}
-                <button type="submit" disabled={contactPending} className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-800 hover:bg-blue-100 disabled:opacity-60"><PhoneCall size={14} />{contactPending ? "A registar..." : "Registar tentativa"}</button>
+                <button type="submit" disabled={contactPending} className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 text-xs font-semibold text-blue-800 hover:bg-blue-100 disabled:opacity-60"><PhoneCall size={14} />{contactPending ? "A registar..." : "Registar tentativa"}</button>
               </form>
             </section>
 
-            <section className="rounded-xl border border-slate-200 p-4">
+            <section className="flex h-full flex-col rounded-xl border border-slate-200 p-4">
               <div className="mb-2 flex items-center gap-2"><MessageSquarePlus size={16} className="text-blue-700" /><h3 className="text-sm font-semibold text-slate-900">Adicionar observação</h3></div>
-              <p className="mb-3 text-xs leading-5 text-slate-500">Cada observação fica como entrada independente no histórico.</p>
-              <form action={noteAction} className="space-y-2">
+              <p className="mb-3 min-h-10 text-xs leading-5 text-slate-500">Cada observação fica como entrada independente no histórico.</p>
+              <form action={noteAction} className="mt-auto space-y-2">
                 <input type="hidden" name="deal_id" value={deal.id} /><input type="hidden" name="action" value="observation" />
-                <textarea name="description" rows={2} maxLength={5000} required placeholder="Escreve a observação..." className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-600" />
+                <textarea name="description" rows={2} maxLength={5000} required placeholder="Escreve a observação..." className="min-h-16 w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-600" />
                 {noteState.error && <p role="alert" className="text-xs text-rose-700">{noteState.error}</p>}
                 {noteState.success && <p role="status" className="text-xs text-emerald-700">{noteState.success}</p>}
-                <button type="submit" disabled={notePending} className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"><MessageSquarePlus size={14} />{notePending ? "A guardar..." : "Adicionar observação"}</button>
+                <button type="submit" disabled={notePending} className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"><MessageSquarePlus size={14} />{notePending ? "A guardar..." : "Adicionar observação"}</button>
               </form>
             </section>
           </div>
 
           <section>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div><h3 className="text-sm font-semibold text-slate-900">Histórico do negócio</h3><span className="text-xs text-slate-500">{activities.length} registos</span></div>
-              {activities.length > 0 && <button type="button" onClick={() => setSelectedActivityIds(allSelected ? [] : activities.map((activity) => activity.id))} className="text-xs font-semibold text-blue-700 hover:underline">{allSelected ? "Limpar seleção" : "Selecionar todos"}</button>}
+              <div><h3 className="text-sm font-semibold text-slate-900">Histórico do negócio</h3><span className="text-xs text-slate-500">{activities.length} registos · clica numa entrada para a selecionar</span></div>
+              {activities.length > 0 && <button type="button" onClick={() => setSelectedActivityIds(allSelected ? [] : activities.slice(0, 50).map((activity) => activity.id))} className="text-xs font-semibold text-blue-700 hover:underline">{allSelected ? "Limpar seleção" : activities.length > 50 ? "Selecionar primeiros 50" : "Selecionar todos"}</button>}
             </div>
 
             {activities.length > 0 && (
@@ -330,36 +358,70 @@ export function DealDetailsDialog({ deal, initialStage, onClose }: {
                 <input type="hidden" name="deal_id" value={deal.id} />
                 <input type="hidden" name="activity_ids" value={JSON.stringify(selectedActivityIds)} />
                 <p className="text-xs text-slate-600">{selectedActivityIds.length} selecionado(s)</p>
-                <button type="submit" disabled={deletePending || selectedActivityIds.length === 0} className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40">
-                  <Trash2 size={13} />{deletePending ? "A eliminar..." : "Eliminar selecionados"}
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" onClick={() => {
+                    if (!selectedActivity) return;
+                    setEditingActivityId(selectedActivity.id);
+                    setEditDescription(selectedActivity.description ?? "");
+                  }} disabled={!canEditSelected || editPending} title={canEditSelected ? "Editar esta entrada" : "Seleciona uma observação ou tentativa de contacto"} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40">
+                    <Pencil size={13} />Editar entrada
+                  </button>
+                  <button type="submit" disabled={deletePending || selectedActivityIds.length === 0} className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40">
+                    <Trash2 size={13} />{deletePending ? "A eliminar..." : "Eliminar selecionados"}
+                  </button>
+                </div>
               </form>
             )}
             {deleteState.error && <p role="alert" className="mb-3 text-xs text-rose-700">{deleteState.error}</p>}
             {deleteState.success && <p role="status" className="mb-3 text-xs text-emerald-700">{deleteState.success}</p>}
+            {editState.error && <p role="alert" className="mb-3 text-xs text-rose-700">{editState.error}</p>}
+            {editState.success && <p role="status" className="mb-3 text-xs text-emerald-700">{editState.success}</p>}
 
             {activities.length ? <ol className="space-y-2">
-              {activities.map((activity) => <li key={activity.id} className={"flex gap-2 rounded-xl border p-3 " + (selectedActivityIds.includes(activity.id) ? "border-rose-200 bg-rose-50/40" : "border-slate-200 bg-white")}>
-                <label className="mt-0.5 flex shrink-0 items-start">
-                  <input
-                    type="checkbox"
-                    checked={selectedActivityIds.includes(activity.id)}
-                    onChange={() => toggleActivity(activity.id)}
-                    aria-label={"Selecionar " + eventTitle(activity)}
-                    className="mt-0.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
-                  />
-                </label>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs font-semibold text-slate-800">{eventTitle(activity)}</p>
-                    <p className="inline-flex items-center gap-1 text-[11px] tabular-nums text-slate-500"><Clock3 size={12} />{dateTimeLabel(activity.occurred_at)}</p>
-                  </div>
-                  {eventDescription(activity) && <p className="mt-1.5 whitespace-pre-wrap text-sm leading-5 text-slate-600">{eventDescription(activity)}</p>}
-                </div>
-              </li>)}
+              {activities.map((activity) => {
+                const selected = selectedActivityIds.includes(activity.id);
+                const editingThis = editingActivityId === activity.id;
+                return (
+                  <li key={activity.id} className="space-y-2">
+                    <button
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => toggleActivity(activity.id)}
+                      className={"flex w-full items-start gap-2 rounded-xl border p-3 text-left transition " +
+                        (selected ? "border-blue-300 bg-blue-50/70 ring-1 ring-blue-100" : "border-slate-200 bg-white hover:border-blue-200 hover:bg-slate-50")}
+                    >
+                      <span className={"mt-0.5 shrink-0 " + (selected ? "text-blue-700" : "text-slate-300")}>
+                        {selected ? <CheckCircle2 size={17} /> : <Circle size={17} />}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-xs font-semibold text-slate-800">{eventTitle(activity)}</span>
+                          <span className="inline-flex items-center gap-1 text-[11px] tabular-nums text-slate-500"><Clock3 size={12} />{dateTimeLabel(activity.occurred_at)}</span>
+                        </span>
+                        {eventDescription(activity) && <span className="mt-1.5 block whitespace-pre-wrap text-sm leading-5 text-slate-600">{eventDescription(activity)}</span>}
+                      </span>
+                    </button>
+                    {editingThis && (
+                      <form action={editAction} className="space-y-2 rounded-xl border border-blue-200 bg-blue-50/40 p-3">
+                        <input type="hidden" name="deal_id" value={deal.id} />
+                        <input type="hidden" name="activity_id" value={activity.id} />
+                        <label htmlFor={"edit_activity_" + activity.id} className="block text-xs font-semibold text-slate-700">Editar texto da entrada</label>
+                        <textarea id={"edit_activity_" + activity.id} name="description" rows={3} maxLength={5000} required value={editDescription} onChange={(event) => setEditDescription(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-600" />
+                        <div className="flex justify-end gap-2">
+                          <button type="button" onClick={() => setEditingActivityId(null)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">Cancelar</button>
+                          <button type="submit" disabled={editPending} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-800 disabled:opacity-60"><Save size={13} />{editPending ? "A guardar..." : "Guardar edição"}</button>
+                        </div>
+                      </form>
+                    )}
+                  </li>
+                );
+              })}
             </ol> : <p className="rounded-xl border border-dashed border-slate-300 p-4 text-center text-sm text-slate-500">Ainda não existem atividades registadas neste negócio.</p>}
           </section>
-          <div className="flex justify-end border-t border-slate-100 pt-3"><button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Fechar</button></div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+            <p className="text-xs text-slate-500">Criado em {dateTimeLabel(deal.created_at)}</p>
+            <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Fechar</button>
+          </div>
         </div>
       </section>
     </div>
