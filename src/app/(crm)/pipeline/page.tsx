@@ -2,7 +2,7 @@ import Link from "next/link";
 import { BriefcaseBusiness, CalendarClock, Clock3, Search, TrendingUp, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { PipelineBoard, type PipelineDeal } from "@/components/crm/pipeline-board";
-import { PipelineMonthControls, type PipelineMonthOption } from "@/components/crm/pipeline-month-controls";
+import { PipelineMonthControls } from "@/components/crm/pipeline-month-controls";
 
 type Props = { searchParams: Promise<{ q?: string; sort?: string; month?: string }> };
 type DealRow = {
