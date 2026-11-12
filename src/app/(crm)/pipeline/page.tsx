@@ -224,11 +224,6 @@ export default async function PipelinePage({ searchParams }: Props) {
   });
 
   const currentMonth = currentMonthStart();
-  const existingMonthDeals = new Set(
-    allDeals
-      .filter((deal) => deal.deal_type === "portfolio_renewal" && !["lost", "sale"].includes(deal.stage) && deal.eligibility_month)
-      .map((deal) => deal.client_id + "|" + deal.eligibility_month)
-  );
   const stageByDealId = new Map(allDeals.map((deal) => [deal.id, deal.stage]));
   const linksByServiceId = new Map<string, DealServiceRow[]>();
   for (const link of dealServices) {
@@ -250,7 +245,6 @@ export default async function PipelinePage({ searchParams }: Props) {
   for (const service of (candidateServicesResult.data ?? []) as CandidateServiceRow[]) {
     if (!service.loyalty_end_date || linkedServiceIds.has(service.id)) continue;
     const month = eligibilityMonth(service.loyalty_end_date);
-    if (existingMonthDeals.has(service.client_id + "|" + month)) continue;
     const clientsInMonth = candidatesByMonth.get(month) ?? new Set<string>();
     clientsInMonth.add(service.client_id);
     candidatesByMonth.set(month, clientsInMonth);
