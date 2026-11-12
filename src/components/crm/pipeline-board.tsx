@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { getServicePackageLabel } from "@/lib/crm/packages";
 import { DealUpdateForm } from "@/components/crm/deal-update-form";
+import { PipelineMonthMove } from "@/components/crm/pipeline-month-move";
+import type { PipelineMonthOption } from "@/components/crm/pipeline-month-controls";
 
 export type PipelineDeal = {
   id: string;
@@ -27,7 +29,7 @@ export type PipelineDeal = {
   notes: string | null;
   eligibility_month: string | null;
   client: { id: string; full_name: string; nif: string } | null;
-  services: { id: string; service_number: string; service_type: string; package_name: string | null }[];
+  services: { id: string; service_number: string; service_type: string; package_name: string | null; loyalty_end_date: string | null }[];
 };
 
 const STAGES = [
@@ -63,7 +65,7 @@ function isOverdue(deal: PipelineDeal) {
   return new Date(deal.next_contact_at).getTime() < Date.now();
 }
 
-export function PipelineBoard({ deals }: { deals: PipelineDeal[] }) {
+export function PipelineBoard({ deals, months }: { deals: PipelineDeal[]; months: PipelineMonthOption[] }) {
   const [draggedDealId, setDraggedDealId] = useState<string | null>(null);
   const [dropStage, setDropStage] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ deal: PipelineDeal; targetStage: string } | null>(null);
@@ -231,6 +233,11 @@ export function PipelineBoard({ deals }: { deals: PipelineDeal[] }) {
                             <PencilLine size={12} /> Atualizar
                           </button>
                         </div>
+                        <PipelineMonthMove
+                          dealId={deal.id}
+                          currentMonth={deal.eligibility_month}
+                          months={months}
+                        />
                       </article>
                     );
                   })}
