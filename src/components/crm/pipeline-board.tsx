@@ -290,13 +290,12 @@ export function PipelineBoard({ deals }: { deals: PipelineDeal[] }) {
                           >
                             <Users size={12} /> Ficha
                           </Link>
-                          <button
-                            type="button"
-                            onClick={() => setEditing({ deal, targetStage: deal.stage })}
+                          <Link
+                            href={"/pipeline/" + deal.id + "?month=" + encodeURIComponent(deal.eligibility_month ?? "unassigned")}
                             className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-blue-300 hover:text-blue-700"
                           >
                             <PencilLine size={12} /> Abrir negócio
-                          </button>
+                          </Link>
                         </div>
                         <PipelineMonthMove
                           dealId={deal.id}
