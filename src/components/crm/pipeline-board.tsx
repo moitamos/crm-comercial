@@ -154,7 +154,7 @@ export function PipelineBoard({ deals }: { deals: PipelineDeal[] }) {
                   </span>
                 </header>
 
-                <div className="space-y-2.5">
+                <div className="max-h-[68vh] min-h-[320px] space-y-2.5 overflow-y-auto overscroll-contain pr-1">
                   {items.map((deal) => {
                     const overdue = isOverdue(deal);
                     const serviceLabels = deal.services.map((service) =>
