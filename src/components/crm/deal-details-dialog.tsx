@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -19,6 +20,7 @@ import {
 import {
   deleteDealActivityEntriesAction,
   editDealActivityEntryAction,
+  markDealLostAction,
   recordDealActivityAction,
 } from "@/lib/crm/actions";
 import { getServicePackageLabel } from "@/lib/crm/packages";
@@ -45,6 +47,7 @@ type Service = {
 type Deal = {
   id: string;
   created_at: string;
+  eligibility_month: string | null;
   stage: string;
   last_contact_at: string | null;
   next_contact_at: string | null;
@@ -105,11 +108,40 @@ function servicePackage(service: Service) {
     service.service_type === "gcp" ? "GCP" : "Outro serviço"
   );
 }
+type LostServiceDecision = { decision: "" | "recycle" | "close"; loyalty_end_date: string };
+function defaultRecycledEndDate() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = today.getMonth() + 24;
+  const day = today.getDate();
+  const targetYear = year + Math.floor(month / 12);
+  const targetMonth = month % 12;
+  const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+  const target = new Date(targetYear, targetMonth, Math.min(day, lastDay));
+  return [
+    target.getFullYear(),
+    String(target.getMonth() + 1).padStart(2, "0"),
+    String(target.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+function returnToFunnelMonth(endDate: string) {
+  if (!endDate) return "";
+  const date = new Date(endDate + "T12:00:00Z");
+  if (Number.isNaN(date.getTime())) return "";
+  date.setUTCMonth(date.getUTCMonth() - 6);
+  return date.toLocaleDateString("pt-PT", { month: "long", year: "numeric", timeZone: "UTC" });
+}
+function todayIsoDate() {
+  const date = new Date();
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
+}
 
-export function DealDetailsDialog({ deal, initialStage, onClose }: {
+export function DealDetailsDialog({ deal, initialStage, onClose, displayMode = "dialog", backHref = "/pipeline" }: {
   deal: Deal;
   initialStage: string;
-  onClose: () => void;
+  onClose?: () => void;
+  displayMode?: "dialog" | "page";
+  backHref?: string;
 }) {
   const router = useRouter();
   const [stage, setStage] = useState(initialStage || deal.stage);
@@ -121,12 +153,19 @@ export function DealDetailsDialog({ deal, initialStage, onClose }: {
   const [selectedActivityIds, setSelectedActivityIds] = useState<string[]>([]);
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
   const [editDescription, setEditDescription] = useState("");
+  const [lostServiceDecisions, setLostServiceDecisions] = useState<Record<string, LostServiceDecision>>(() =>
+    Object.fromEntries(deal.services.map((service) => [service.id, { decision: "", loyalty_end_date: defaultRecycledEndDate() }]))
+  );
 
   const [updateState, updateAction, updatePending] = useActionState(recordDealActivityAction, {} as FormActionState);
+  const [lostState, lostAction, lostPending] = useActionState(markDealLostAction, {} as FormActionState);
   const [contactState, contactAction, contactPending] = useActionState(recordDealActivityAction, {} as FormActionState);
   const [noteState, noteAction, notePending] = useActionState(recordDealActivityAction, {} as FormActionState);
   const [deleteState, deleteAction, deletePending] = useActionState(deleteDealActivityEntriesAction, {} as FormActionState);
   const [editState, editAction, editPending] = useActionState(editDealActivityEntryAction, {} as FormActionState);
+  const isPage = displayMode === "page";
+  const returnMonthQuery = deal.eligibility_month ?? "unassigned";
+  const dedicatedPageHref = "/pipeline/" + deal.id + "?month=" + encodeURIComponent(returnMonthQuery);
 
   function applySnapshot(snapshot?: DealSnapshotState, nextActivities?: Activity[]) {
     if (snapshot) {
@@ -149,13 +188,23 @@ export function DealDetailsDialog({ deal, initialStage, onClose }: {
     setSelectedActivityIds([]);
     setEditingActivityId(null);
     setEditDescription("");
-  }, [deal.id, deal.stage, deal.last_contact_at, deal.next_contact_at, deal.lost_reason, deal.activities, initialStage]);
+    setLostServiceDecisions(Object.fromEntries(deal.services.map((service) => [
+      service.id,
+      { decision: "", loyalty_end_date: defaultRecycledEndDate() },
+    ])));
+  }, [deal.id, deal.stage, deal.last_contact_at, deal.next_contact_at, deal.lost_reason, deal.activities, deal.services, initialStage]);
 
   useEffect(() => {
     if (!updateState.success) return;
     applySnapshot(updateState.dealSnapshot, updateState.activities);
     router.refresh();
   }, [updateState, router]);
+
+  useEffect(() => {
+    if (!lostState.success) return;
+    applySnapshot(lostState.dealSnapshot, lostState.activities);
+    router.refresh();
+  }, [lostState, router]);
 
   useEffect(() => {
     if (!contactState.success) return;
@@ -187,12 +236,13 @@ export function DealDetailsDialog({ deal, initialStage, onClose }: {
   }, [editState, router]);
 
   useEffect(() => {
+    if (isPage || !onClose) return;
     function keyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") onClose?.();
     }
     window.addEventListener("keydown", keyDown);
     return () => window.removeEventListener("keydown", keyDown);
-  }, [onClose]);
+  }, [onClose, isPage]);
 
   function toggleActivity(id: string) {
     setEditingActivityId(null);
