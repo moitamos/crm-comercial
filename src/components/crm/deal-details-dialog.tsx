@@ -97,7 +97,7 @@ export function DealDetailsDialog({ deal, initialStage, onClose }: {
 
   useEffect(() => {
     if (updateState.success || contactState.success || noteState.success) router.refresh();
-  }, [updateState.success, contactState.success, noteState.success, router]);
+  }, [updateState, contactState, noteState, router]);
 
   useEffect(() => {
     function keyDown(event: KeyboardEvent) { if (event.key === "Escape") onClose(); }
@@ -127,6 +127,13 @@ export function DealDetailsDialog({ deal, initialStage, onClose }: {
             <div><p className="text-[11px] font-semibold uppercase text-slate-500">Email</p><p className="mt-1 break-all text-sm text-slate-800">{deal.client?.email ?? "—"}</p></div>
             {deal.next_contact_at && <div className="sm:col-span-2"><p className="text-[11px] font-semibold uppercase text-slate-500">Próximo contacto</p><p className="mt-1 text-sm text-slate-800">{dateTimeLabel(deal.next_contact_at)}</p></div>}
           </section>
+
+          {(deal.notes || deal.lost_reason) && (
+            <section className="space-y-2 rounded-xl border border-slate-200 p-3">
+              {deal.notes && <div><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Notas existentes</p><p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{deal.notes}</p></div>}
+              {deal.lost_reason && <div><p className="text-[11px] font-semibold uppercase tracking-wide text-rose-700">Motivo da perda</p><p className="mt-1 whitespace-pre-wrap text-sm text-rose-800">{deal.lost_reason}</p></div>}
+            </section>
+          )}
 
           <section>
             <div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-semibold text-slate-900">Serviços associados</h3><span className="text-xs text-slate-500">{deal.services.length} serviços</span></div>
