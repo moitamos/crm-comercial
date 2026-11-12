@@ -161,10 +161,29 @@ export function PipelineBoard({ deals }: { deals: PipelineDeal[] }) {
                     const serviceLabels = deal.services.map((service) =>
                       getServicePackageLabel(service) || service.package_name || service.service_type
                     );
+                    const nearestLoyaltyEnd = deal.services
+                      .map((service) => service.loyalty_end_date)
+                      .filter((date): date is string => Boolean(date))
+                      .sort()[0] ?? null;
                     return (
                       <article
                         key={deal.id}
                         draggable
+                        role="button"
+                        tabIndex={0}
+                        aria-label={"Abrir negócio de " + (deal.client?.full_name ?? "cliente sem nome")}
+                        onClick={(event) => {
+                          const target = event.target as HTMLElement;
+                          if (target.closest("a,button,input,select,textarea")) return;
+                          setEditing({ deal, targetStage: deal.stage });
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.target !== event.currentTarget) return;
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setEditing({ deal, targetStage: deal.stage });
+                          }
+                        }}
                         onDragStart={(event) => startDrag(event, deal)}
                         onDragEnd={() => {
                           setDraggedDealId(null);
@@ -198,11 +217,11 @@ export function PipelineBoard({ deals }: { deals: PipelineDeal[] }) {
                           <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-600">
                             {dealTypeLabel(deal.deal_type)}
                           </span>
-                          <span className="rounded-md bg-blue-50 px-2 py-1 text-[10px] font-medium text-blue-700">
-                            {deal.services.some((service) => service.loyalty_end_date)
-                              ? "Data de fim da fidelização nos serviços abaixo"
-                              : "Sem data de fidelização"}
-                          </span>
+                          {nearestLoyaltyEnd && (
+                            <span className="rounded-md bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700">
+                              Fidelização até {dateLabel(nearestLoyaltyEnd)}
+                            </span>
+                          )}
                         </div>
 
                         <div className="mt-2 flex flex-wrap gap-1">
