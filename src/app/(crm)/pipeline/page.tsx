@@ -182,7 +182,7 @@ export default async function PipelinePage({ searchParams }: Props) {
   for (const service of (candidateServicesResult.data ?? []) as CandidateServiceRow[]) {
     if (!service.loyalty_end_date || linkedServiceIds.has(service.id)) continue;
     const month = eligibilityMonth(service.loyalty_end_date);
-    if (month < currentMonth || existingMonthDeals.has(service.client_id + "|" + month)) continue;
+    if (existingMonthDeals.has(service.client_id + "|" + month)) continue;
     const clientsInMonth = candidatesByMonth.get(month) ?? new Set<string>();
     clientsInMonth.add(service.client_id);
     candidatesByMonth.set(month, clientsInMonth);
