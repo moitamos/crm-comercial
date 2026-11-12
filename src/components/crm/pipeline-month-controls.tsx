@@ -64,7 +64,7 @@ export function PipelineMonthControls({
         </button>
         <span className="text-xs text-slate-500">
           {candidateCount > 0
-            ? candidateCount + (candidateCount === 1 ? " cliente entra em período de renovação" : " clientes entram em período de renovação") + " neste mês"
+            ? candidateCount + (candidateCount === 1 ? " cliente com serviço elegível" : " clientes com serviços elegíveis") + " neste mês"
             : selectedMonth === "unassigned" ? "Negócios sem mês atribuído" : "Não há novos negócios por criar neste mês"}
         </span>
       </div>
@@ -79,7 +79,7 @@ export function PipelineMonthControls({
           {pending ? (
             "A criar negócios..."
           ) : canCreate ? (
-            <><Plus size={16} /> Criar +{candidateCount} negócios</>
+            <><Plus size={16} /> Preparar +{candidateCount} negócios</>
           ) : (
             "Sem negócios novos"
           )}
