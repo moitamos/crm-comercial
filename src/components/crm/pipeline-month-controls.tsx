@@ -6,20 +6,16 @@ import { CalendarDays, Plus } from "lucide-react";
 import { createMonthlyRenewalDealsAction } from "@/lib/crm/actions";
 import type { FormActionState } from "@/lib/crm/types";
 
-export type PipelineMonthOption = { value: string; label: string };
-
 export function PipelineMonthControls({
-  months,
   selectedMonth,
   candidateCount,
   query,
-  type,
+  sort,
 }: {
-  months: PipelineMonthOption[];
   selectedMonth: string;
   candidateCount: number;
   query: string;
-  type: string;
+  sort: string;
 }) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState(
@@ -35,7 +31,7 @@ export function PipelineMonthControls({
     const params = new URLSearchParams();
     if (nextMonth) params.set("month", nextMonth);
     if (query) params.set("q", query);
-    if (type) params.set("type", type);
+    if (sort !== "created_desc") params.set("sort", sort);
     router.push("/pipeline?" + params.toString());
   }
 
@@ -47,16 +43,25 @@ export function PipelineMonthControls({
         <label htmlFor="pipeline_month" className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-slate-700">
           <CalendarDays size={16} className="text-blue-700" /> Mês dos negócios
         </label>
-        <select
+        <input
           id="pipeline_month"
-          value={selectedMonth}
-          onChange={(event) => changeMonth(event.target.value)}
-          className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium capitalize text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100 sm:max-w-xs"
+          type="month"
+          value={selectedMonth === "unassigned" ? "" : selectedMonth.slice(0, 7)}
+          onChange={(event) => changeMonth(event.target.value ? event.target.value + "-01" : "unassigned")}
+          aria-label="Selecionar mês e ano dos negócios"
+          className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100 sm:max-w-xs"
+        />
+        <button
+          type="button"
+          onClick={() => changeMonth("unassigned")}
+          aria-pressed={selectedMonth === "unassigned"}
+          className={"rounded-xl border px-3 py-2 text-xs font-semibold transition " +
+            (selectedMonth === "unassigned"
+              ? "border-blue-200 bg-blue-50 text-blue-700"
+              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}
         >
-          {months.map((month) => (
-            <option key={month.value} value={month.value}>{month.label}</option>
-          ))}
-        </select>
+          Sem mês definido
+        </button>
         <span className="text-xs text-slate-500">
           {candidateCount > 0
             ? candidateCount + (candidateCount === 1 ? " cliente entra em período de renovação" : " clientes entram em período de renovação") + " neste mês"
