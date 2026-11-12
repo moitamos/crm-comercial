@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PipelineBoard, type PipelineDeal } from "@/components/crm/pipeline-board";
 import { PipelineMonthControls, type PipelineMonthOption } from "@/components/crm/pipeline-month-controls";
 
-type Props = { searchParams: Promise<{ q?: string; type?: string; month?: string }> };
+type Props = { searchParams: Promise<{ q?: string; sort?: string; month?: string }> };
 type DealRow = {
   id: string;
   client_id: string;
@@ -31,11 +31,12 @@ const STAGES = [
   { value: "sale", label: "Venda" },
   { value: "lost", label: "Perdido" },
 ] as const;
-const DEAL_TYPES = [
-  { value: "portfolio_renewal", label: "Renovação de carteira" },
-  { value: "new_sale", label: "Nova venda" },
-  { value: "package_change", label: "Alteração de pacote" },
-];
+const DEAL_SORTS = [
+  { value: "created_desc", label: "Criação: mais recente para mais antiga" },
+  { value: "loyalty_asc", label: "Fidelização: mais próxima primeiro" },
+  { value: "loyalty_desc", label: "Fidelização: mais distante primeiro" },
+  { value: "contact_desc", label: "Contacto: mais recente primeiro" },
+] as const;
 
 async function loadChunks<T>(
   ids: string[],
@@ -124,7 +125,9 @@ function Metric({ label, value, icon: Icon }: { label: string; value: number; ic
 export default async function PipelinePage({ searchParams }: Props) {
   const params = await searchParams;
   const query = (params.q ?? "").trim().slice(0, 80);
-  const selectedType = DEAL_TYPES.some((item) => item.value === params.type) ? params.type ?? "" : "";
+  const selectedSort = DEAL_SORTS.some((item) => item.value === params.sort)
+    ? params.sort ?? "created_desc"
+    : "created_desc";
   const supabase = await createClient();
 
   const [dealsResult, candidateServicesResult] = await Promise.all([
@@ -188,20 +191,9 @@ export default async function PipelinePage({ searchParams }: Props) {
     candidatesByMonth.set(month, clientsInMonth);
   }
 
-  const monthKeys = new Set<string>([currentMonth]);
-  for (const month of candidatesByMonth.keys()) monthKeys.add(month);
-  for (const deal of allDeals) {
-    if (deal.eligibility_month) monthKeys.add(deal.eligibility_month);
-  }
-  const sortedMonths = Array.from(monthKeys).sort();
-  const monthOptions: PipelineMonthOption[] = [
-    { value: "unassigned", label: "Sem mês definido" },
-    ...sortedMonths.map((month) => ({ value: month, label: monthLabel(month) })),
-  ];
-
   const selectedMonth = params.month === "unassigned"
     ? "unassigned"
-    : validMonth(params.month) && monthKeys.has(params.month ?? "")
+    : validMonth(params.month)
       ? params.month as string
       : currentMonth;
   const monthDeals = allDealViews.filter((deal) =>
@@ -212,7 +204,6 @@ export default async function PipelinePage({ searchParams }: Props) {
 
   const searchNeedle = normalized(query);
   const filtered = monthDeals.filter((deal) => {
-    if (selectedType && deal.deal_type !== selectedType) return false;
     if (!searchNeedle) return true;
     const searchable = [
       deal.client?.full_name ?? "",
@@ -221,6 +212,34 @@ export default async function PipelinePage({ searchParams }: Props) {
       ...deal.services.map((service) => service.package_name ?? ""),
     ].join(" ");
     return normalized(searchable).includes(searchNeedle);
+  });
+  const sortedFiltered = [...filtered].sort((left, right) => {
+    const created = right.created_at.localeCompare(left.created_at);
+    if (selectedSort === "loyalty_asc") {
+      const leftDate = left.services.map((service) => service.loyalty_end_date).filter((date): date is string => Boolean(date)).sort()[0] ?? null;
+      const rightDate = right.services.map((service) => service.loyalty_end_date).filter((date): date is string => Boolean(date)).sort()[0] ?? null;
+      if (!leftDate && !rightDate) return created;
+      if (!leftDate) return 1;
+      if (!rightDate) return -1;
+      return leftDate.localeCompare(rightDate) || created;
+    }
+    if (selectedSort === "loyalty_desc") {
+      const leftDates = left.services.map((service) => service.loyalty_end_date).filter((date): date is string => Boolean(date)).sort();
+      const rightDates = right.services.map((service) => service.loyalty_end_date).filter((date): date is string => Boolean(date)).sort();
+      const leftDate = leftDates[leftDates.length - 1] ?? null;
+      const rightDate = rightDates[rightDates.length - 1] ?? null;
+      if (!leftDate && !rightDate) return created;
+      if (!leftDate) return 1;
+      if (!rightDate) return -1;
+      return rightDate.localeCompare(leftDate) || created;
+    }
+    if (selectedSort === "contact_desc") {
+      if (!left.last_contact_at && !right.last_contact_at) return created;
+      if (!left.last_contact_at) return 1;
+      if (!right.last_contact_at) return -1;
+      return right.last_contact_at.localeCompare(left.last_contact_at) || created;
+    }
+    return created;
   });
 
   const stageCounts = new Map<string, number>(STAGES.map((stage) => [stage.value, 0]));
@@ -253,11 +272,10 @@ export default async function PipelinePage({ searchParams }: Props) {
       </div>
 
       <PipelineMonthControls
-        months={monthOptions}
         selectedMonth={selectedMonth}
         candidateCount={candidateCount}
         query={query}
-        type={selectedType}
+        sort={selectedSort}
       />
 
       <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
@@ -285,13 +303,12 @@ export default async function PipelinePage({ searchParams }: Props) {
           <input name="q" defaultValue={query} placeholder="Pesquisar por cliente, NIF, serviço ou pacote"
             className="w-full border-0 bg-transparent py-2 text-sm outline-none placeholder:text-slate-400" />
         </div>
-        <select name="type" defaultValue={selectedType} aria-label="Tipo de negócio"
+        <select name="sort" defaultValue={selectedSort} aria-label="Ordenar negócios"
           className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-600">
-          <option value="">Todos os tipos</option>
-          {DEAL_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+          {DEAL_SORTS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
         <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">Pesquisar</button>
-        {(query || selectedType) && (
+        {(query || selectedSort !== "created_desc") && (
           <Link href={"/pipeline?month=" + encodeURIComponent(selectedMonth)} className="rounded-lg px-3 py-2 text-center text-sm font-medium text-slate-500 hover:bg-slate-50">Limpar</Link>
         )}
       </form>
@@ -299,14 +316,14 @@ export default async function PipelinePage({ searchParams }: Props) {
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-slate-500">
           {filtered.length.toLocaleString("pt-PT")} negócios encontrados · {monthLabel(selectedMonth)}
-          {(query || selectedType) ? " · Filtros aplicados" : ""}
+          {(query || selectedSort !== "created_desc") ? " · Filtros aplicados" : ""}
         </p>
         <p className="hidden items-center gap-1 text-xs text-slate-400 sm:flex">
           <BriefcaseBusiness size={13} /> {STAGES.length} fases
         </p>
       </div>
 
-      <PipelineBoard deals={filtered} months={monthOptions} />
+      <PipelineBoard deals={sortedFiltered} />
     </main>
   );
 }
