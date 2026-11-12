@@ -14,7 +14,7 @@ export function PipelineMonthMove({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [targetMonth, setTargetMonth] = useState(currentMonth ?? "unassigned");
+  const [targetMonth, setTargetMonth] = useState(currentMonth ? currentMonth.slice(0, 7) : "unassigned");
   const [state, formAction, pending] = useActionState(
     moveDealToMonthAction,
     {} as FormActionState
