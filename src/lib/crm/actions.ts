@@ -248,3 +248,77 @@ export async function updateDealAction(_previous: FormActionState, formData: For
   revalidatePath("/clients/" + updatedDeal.client_id);
   return { success: "Negócio atualizado." };
 }
+
+
+function validMonthStart(value: string) {
+  if (!/^\d{4}-(0[1-9]|1[0-2])-01$/.test(value)) return false;
+  const date = new Date(value + "T12:00:00Z");
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+export async function createMonthlyRenewalDealsAction(
+  _previous: FormActionState,
+  formData: FormData
+): Promise<FormActionState> {
+  const context = await getActiveUser();
+  if (!context.userId) return { error: context.error ?? "Sessão inválida." };
+
+  const month = String(formData.get("eligibility_month") ?? "").trim();
+  if (!validMonthStart(month)) return { error: "Seleciona um mês válido." };
+
+  const { data, error } = await context.supabase.rpc("create_renewal_deals_for_month", {
+    p_month: month,
+  });
+
+  if (error) {
+    console.error("[CRM_CREATE_MONTHLY_RENEWAL_DEALS]", { code: error.code, message: error.message });
+    return { error: "Não foi possível criar os negócios deste mês. Atualiza a página e tenta novamente." };
+  }
+
+  const created = typeof data === "number" ? data : Number(data ?? 0);
+  revalidatePath("/pipeline");
+  revalidatePath("/dashboard");
+
+  if (created === 0) {
+    return { success: "Não havia novos negócios por criar neste mês." };
+  }
+  return { success: created + (created === 1 ? " negócio criado." : " negócios criados.") };
+}
+
+export async function moveDealToMonthAction(
+  _previous: FormActionState,
+  formData: FormData
+): Promise<FormActionState> {
+  const context = await getActiveUser();
+  if (!context.userId) return { error: context.error ?? "Sessão inválida." };
+
+  const dealId = String(formData.get("deal_id") ?? "").trim();
+  const targetMonthRaw = String(formData.get("target_month") ?? "").trim();
+  const targetMonth = targetMonthRaw === "unassigned" ? null : targetMonthRaw;
+
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dealId)) {
+    return { error: "Negócio inválido." };
+  }
+  if (targetMonth && !validMonthStart(targetMonth)) {
+    return { error: "Seleciona um mês válido." };
+  }
+
+  const { error } = await context.supabase.rpc("move_renewal_deal_to_month", {
+    p_deal_id: dealId,
+    p_month: targetMonth,
+  });
+
+  if (error) {
+    const message = error.message ?? "";
+    if (message.includes("já tem um negócio de renovação")) {
+      return { error: "Este cliente já tem um negócio de renovação nesse mês." };
+    }
+    if (message.includes("Só podes mover negócios")) return { error: message };
+    console.error("[CRM_MOVE_DEAL_MONTH]", { code: error.code, message });
+    return { error: "Não foi possível mudar o mês do negócio. Confirma se pertence à tua carteira." };
+  }
+
+  revalidatePath("/pipeline");
+  revalidatePath("/dashboard");
+  return { success: targetMonth ? "Negócio transferido para o novo mês." : "Negócio retirado da organização mensal." };
+}
