@@ -210,6 +210,9 @@ function dealActivityError(message: string) {
   if (message.includes("não pode ficar vazia")) return "A observação não pode ficar vazia.";
   if (message.includes("Só podes editar")) return "Só podes editar observações e tentativas de contacto.";
   if (message.includes("já não existe") || message.includes("não pertence a este negócio")) return "Esta entrada já não existe ou não pertence a este negócio.";
+  if (message.includes("destino de cada serviço") || message.includes("individualmente")) return "Tens de escolher o destino de todos os serviços associados.";
+  if (message.includes("fidelização") || message.includes("data de fim")) return "Indica uma data de fidelização futura para cada serviço que vais reciclar.";
+  if (message.includes("já está marcado como perdido")) return "Este negócio já está marcado como perdido.";
   return "Não foi possível registar a atividade. Atualiza a página e tenta novamente.";
 }
 
@@ -268,6 +271,9 @@ export async function recordDealActivityAction(
     if (!DEAL_STAGES.includes(stage as (typeof DEAL_STAGES)[number])) {
       return { error: "Seleciona uma fase válida do funil." };
     }
+    if (stage === "lost") {
+      return { error: "Para marcar como perdido, indica o destino de cada serviço associado." };
+    }
     if (["scheduled", "future_contact"].includes(stage) &&
       (!nextContactDate || !validIsoDate(nextContactDate))) {
       return { error: "Indica a data em que devemos voltar a contactar o cliente." };
@@ -301,6 +307,71 @@ export async function recordDealActivityAction(
   if (action === "observation") return { success: "Observação registada com data e hora.", ...snapshot };
   if (action === "contact_attempt") return { success: "Tentativa de contacto registada.", ...snapshot };
   return { success: "Negócio atualizado e alteração registada.", ...snapshot };
+}
+
+export async function markDealLostAction(
+  _previous: FormActionState,
+  formData: FormData
+): Promise<FormActionState> {
+  const context = await getActiveUser();
+  if (!context.userId) return { error: context.error ?? "Sessão inválida." };
+
+  const dealId = String(formData.get("deal_id") ?? "").trim();
+  const lostReason = String(formData.get("lost_reason") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  let serviceDecisions: unknown;
+
+  try {
+    serviceDecisions = JSON.parse(String(formData.get("service_decisions") ?? "[]"));
+  } catch {
+    return { error: "As decisões dos serviços são inválidas." };
+  }
+
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidPattern.test(dealId)) return { error: "Negócio inválido." };
+  if (!lostReason) return { error: "Indica o motivo pelo qual o negócio foi perdido." };
+  if (lostReason.length > 1000) return { error: "O motivo de perda não pode ultrapassar 1.000 caracteres." };
+  if (description.length > 5000) return { error: "O texto não pode ultrapassar 5.000 caracteres." };
+
+  if (!Array.isArray(serviceDecisions) || serviceDecisions.length > 50) {
+    return { error: "A lista de decisões dos serviços é inválida." };
+  }
+
+  const seen = new Set<string>();
+  for (const raw of serviceDecisions) {
+    if (!raw || typeof raw !== "object") return { error: "Uma das decisões dos serviços é inválida." };
+    const item = raw as Record<string, unknown>;
+    const serviceId = String(item.service_id ?? "");
+    const decision = String(item.decision ?? "");
+    const date = String(item.loyalty_end_date ?? "");
+    if (!uuidPattern.test(serviceId) || seen.has(serviceId)) {
+      return { error: "Cada serviço deve ter uma decisão individual válida." };
+    }
+    seen.add(serviceId);
+    if (!["recycle", "close"].includes(decision)) {
+      return { error: "Escolhe entre reciclar ou encerrar cada serviço." };
+    }
+    if (decision === "recycle" && (!validIsoDate(date) || !date || date <= new Date().toISOString().slice(0, 10))) {
+      return { error: "Indica uma data de fidelização futura para cada serviço que vais reciclar." };
+    }
+  }
+
+  const { error } = await context.supabase.rpc("mark_deal_lost_with_service_decisions", {
+    p_deal_id: dealId,
+    p_lost_reason: lostReason,
+    p_service_decisions: serviceDecisions,
+    p_description: description || null,
+  });
+
+  if (error) {
+    console.error("[CRM_MARK_DEAL_LOST]", { code: error.code, message: error.message });
+    return { error: dealActivityError(error.message ?? "") };
+  }
+
+  const snapshot = await loadDealActivitySnapshot(context.supabase, dealId);
+  revalidatePath("/pipeline");
+  revalidatePath("/dashboard");
+  return { success: "Negócio marcado como perdido. As decisões dos serviços foram guardadas.", ...snapshot };
 }
 
 export async function deleteDealActivityEntriesAction(
