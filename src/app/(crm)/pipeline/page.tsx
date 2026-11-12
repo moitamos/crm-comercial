@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { BriefcaseBusiness, CalendarClock, Clock3, Search, TrendingUp, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { getServicePackageLabel } from "@/lib/crm/packages";
 import { PipelineBoard, type PipelineDeal } from "@/components/crm/pipeline-board";
 import { PipelineMonthControls, type PipelineMonthOption } from "@/components/crm/pipeline-month-controls";
 
