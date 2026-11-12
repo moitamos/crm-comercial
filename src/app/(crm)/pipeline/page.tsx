@@ -233,7 +233,7 @@ export default async function PipelinePage({ searchParams }: Props) {
   }
   const linkedServiceIds = new Set<string>();
   for (const [serviceId, links] of linksByServiceId) {
-    const hasOpenDeal = links.some((link) => stageByDealId.get(link.deal_id) !== "lost");
+    const hasOpenDeal = links.some((link) => !["lost", "sale"].includes(stageByDealId.get(link.deal_id) ?? ""));
     const latestDecision = links
       .filter((link) => link.loss_decision)
       .sort((left, right) => (right.loss_decided_at ?? "").localeCompare(left.loss_decided_at ?? ""))[0]?.loss_decision;
