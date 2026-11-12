@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import Link from "next/link";
 import {
   BriefcaseBusiness,
@@ -78,6 +78,7 @@ export function PipelineBoard({ deals }: { deals: PipelineDeal[] }) {
   const [draggedDealId, setDraggedDealId] = useState<string | null>(null);
   const [dropStage, setDropStage] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ deal: PipelineDeal; targetStage: string } | null>(null);
+  const listRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const closeEditor = useCallback(() => setEditing(null), []);
 
   useEffect(() => {
@@ -100,6 +101,20 @@ export function PipelineBoard({ deals }: { deals: PipelineDeal[] }) {
     }
     return grouped;
   }, [deals]);
+
+  useLayoutEffect(() => {
+    for (const stage of STAGES) {
+      const list = listRefs.current[stage.value];
+      if (!list) continue;
+      const firstFiveCards = Array.from(
+        list.querySelectorAll<HTMLElement>("[data-deal-card]")
+      ).slice(0, 5);
+      const gap = Number.parseFloat(window.getComputedStyle(list).rowGap || "0") || 0;
+      const cardsHeight = firstFiveCards.reduce((total, card) => total + card.offsetHeight, 0);
+      const gapsHeight = gap * Math.max(0, firstFiveCards.length - 1);
+      list.style.maxHeight = Math.max(320, cardsHeight + gapsHeight) + "px";
+    }
+  }, [groupedDeals]);
 
   function startDrag(event: DragEvent<HTMLElement>, deal: PipelineDeal) {
     setDraggedDealId(deal.id);
@@ -166,7 +181,10 @@ export function PipelineBoard({ deals }: { deals: PipelineDeal[] }) {
                   </span>
                 </header>
 
-                <div className="max-h-[68vh] min-h-[320px] space-y-2.5 overflow-y-auto overscroll-contain pr-1">
+                <div
+                  ref={(element) => { listRefs.current[stage.value] = element; }}
+                  className="min-h-[320px] space-y-2.5 overflow-y-auto overscroll-contain pr-1"
+                >
                   {items.map((deal) => {
                     const overdue = isOverdue(deal);
                     const serviceLabels = deal.services.map((service) =>
@@ -179,6 +197,7 @@ export function PipelineBoard({ deals }: { deals: PipelineDeal[] }) {
                     return (
                       <article
                         key={deal.id}
+                        data-deal-card
                         draggable
                         role="button"
                         tabIndex={0}
