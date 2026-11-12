@@ -6,7 +6,6 @@ import {
   BriefcaseBusiness,
   CalendarClock,
   CheckCircle2,
-  Clock3,
   GripVertical,
   PencilLine,
   Users,
@@ -242,14 +241,12 @@ export function PipelineBoard({ deals }: { deals: PipelineDeal[] }) {
                         </div>
 
                         <div className="mt-2 space-y-1 border-t border-slate-100 pt-2 text-[10px] text-slate-500">
-                          {deal.next_contact_at ? (
+                          {deal.next_contact_at && (
                             <p className={overdue ? "font-semibold text-rose-700" : ""}>
                               <CalendarClock size={12} className="mr-1 inline" />
                               Próximo contacto: {dateLabel(deal.next_contact_at)}
                               {overdue ? " · Em atraso" : ""}
                             </p>
-                          ) : (
-                            <p><Clock3 size={12} className="mr-1 inline" />Criado em {dateLabel(deal.created_at)}</p>
                           )}
                           {deal.lost_reason && <p className="line-clamp-2 text-rose-700">Motivo: {deal.lost_reason}</p>}
                           {deal.notes && <p className="line-clamp-2 whitespace-pre-wrap leading-4">{deal.notes}</p>}
