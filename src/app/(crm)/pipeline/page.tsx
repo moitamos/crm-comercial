@@ -19,6 +19,7 @@ type DealRow = {
   eligibility_month: string | null;
 };
 type ClientRow = { id: string; full_name: string; nif: string; phone: string | null; email: string | null };
+type ClientAdminContactRow = { id: string; client_id: string; phone_numbers: string[] | null; email: string | null };
 type DealServiceRow = { id: string; deal_id: string; service_id: string; decision: string | null; future_package: string | null };
 type InteractionRow = {
   id: string;
@@ -29,7 +30,7 @@ type InteractionRow = {
   event_data: Record<string, unknown> | null;
   occurred_at: string;
 };
-type ServiceRow = { id: string; service_number: string; service_type: string; package_name: string | null; loyalty_end_date: string | null };
+type ServiceRow = { id: string; service_number: string; service_type: string; package_name: string | null; loyalty_end_date: string | null; source_data: unknown };
 type CandidateServiceRow = { id: string; client_id: string; loyalty_end_date: string };
 
 const STAGES = [
@@ -153,7 +154,7 @@ export default async function PipelinePage({ searchParams }: Props) {
   const allDeals = (dealsResult.data ?? []) as DealRow[];
   const dealIds = allDeals.map((deal) => deal.id);
   const clientIds = Array.from(new Set(allDeals.map((deal) => deal.client_id)));
-  const [clientsResult, dealServicesResult, interactionsResult] = await Promise.all([
+  const [clientsResult, dealServicesResult, interactionsResult, clientAdminContactsResult] = await Promise.all([
     loadChunks<ClientRow>(clientIds, async (batch) =>
       await supabase.from("clients").select("id, full_name, nif, phone, email").in("id", batch)
     ),
@@ -166,16 +167,28 @@ export default async function PipelinePage({ searchParams }: Props) {
         .in("deal_id", batch)
         .order("occurred_at", { ascending: false })
     ),
+    loadChunks<ClientAdminContactRow>(clientIds, async (batch) =>
+      await supabase.from("client_administrators")
+        .select("id, client_id, phone_numbers, email")
+        .in("client_id", batch)
+        .order("full_name", { ascending: true })
+    ),
   ]);
 
   const dealServices = dealServicesResult.data;
   const serviceIds = Array.from(new Set(dealServices.map((item) => item.service_id)));
   const servicesResult = await loadChunks<ServiceRow>(serviceIds, async (batch) =>
-    await supabase.from("services").select("id, service_number, service_type, package_name, loyalty_end_date").in("id", batch)
+    await supabase.from("services").select("id, service_number, service_type, package_name, loyalty_end_date, source_data").in("id", batch)
   );
 
   const clients = new Map(clientsResult.data.map((client) => [client.id, client]));
   const services = new Map(servicesResult.data.map((service) => [service.id, service]));
+  const adminContactsByClient = new Map<string, ClientAdminContactRow[]>();
+  for (const contact of clientAdminContactsResult.data) {
+    const current = adminContactsByClient.get(contact.client_id) ?? [];
+    current.push(contact);
+    adminContactsByClient.set(contact.client_id, current);
+  }
   const activitiesByDeal = new Map<string, PipelineActivity[]>();
   for (const activity of interactionsResult.data) {
     const current = activitiesByDeal.get(activity.deal_id) ?? [];
@@ -192,12 +205,22 @@ export default async function PipelinePage({ searchParams }: Props) {
     servicesByDeal.set(link.deal_id, current);
   }
 
-  const allDealViews: PipelineDeal[] = allDeals.map((deal) => ({
-    ...deal,
-    client: clients.get(deal.client_id) ?? null,
-    services: servicesByDeal.get(deal.id) ?? [],
-    activities: activitiesByDeal.get(deal.id) ?? [],
-  }));
+  const allDealViews: PipelineDeal[] = allDeals.map((deal) => {
+    const client = clients.get(deal.client_id) ?? null;
+    const administratorContacts = adminContactsByClient.get(deal.client_id) ?? [];
+    const phoneNumbers = client?.phone
+      ? [client.phone]
+      : Array.from(new Set(administratorContacts.flatMap((item) => item.phone_numbers ?? []).map((item) => item.trim()).filter(Boolean)));
+    const emails = client?.email
+      ? [client.email]
+      : Array.from(new Set(administratorContacts.map((item) => item.email?.trim()).filter((item): item is string => Boolean(item))));
+    return {
+      ...deal,
+      client: client ? { ...client, phone_numbers: phoneNumbers, emails } : null,
+      services: servicesByDeal.get(deal.id) ?? [],
+      activities: activitiesByDeal.get(deal.id) ?? [],
+    };
+  });
 
   const currentMonth = currentMonthStart();
   const existingMonthDeals = new Set(
@@ -288,7 +311,7 @@ export default async function PipelinePage({ searchParams }: Props) {
     : candidatesByMonth.get(selectedMonth)?.size ?? 0;
 
   const queryError = dealsResult.error || clientsResult.error || dealServicesResult.error
-    || interactionsResult.error || servicesResult.error || candidateServicesResult.error;
+    || interactionsResult.error || clientAdminContactsResult.error || servicesResult.error || candidateServicesResult.error;
   const truncated = (dealsResult.count ?? allDeals.length) > allDeals.length;
 
   return (
