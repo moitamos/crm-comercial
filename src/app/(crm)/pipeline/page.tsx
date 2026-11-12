@@ -51,6 +51,24 @@ async function loadChunks<T>(
   };
 }
 
+async function loadCandidateServices(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const rows: CandidateServiceRow[] = [];
+  let offset = 0;
+  while (true) {
+    const batch = await supabase.from("services")
+      .select("id, client_id, loyalty_end_date")
+      .eq("is_active", true)
+      .not("loyalty_end_date", "is", null)
+      .order("id", { ascending: true })
+      .range(offset, offset + 999);
+    if (batch.error) return { data: rows, error: batch.error };
+    rows.push(...((batch.data ?? []) as CandidateServiceRow[]));
+    if ((batch.data ?? []).length < 1000) break;
+    offset += 1000;
+  }
+  return { data: rows, error: null };
+}
+
 function normalized(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-PT");
 }
@@ -116,12 +134,7 @@ export default async function PipelinePage({ searchParams }: Props) {
       .order("eligibility_month", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: false })
       .limit(5000),
-    supabase.from("services")
-      .select("id, client_id, loyalty_end_date")
-      .eq("is_active", true)
-      .not("loyalty_end_date", "is", null)
-      .order("id", { ascending: true })
-      .limit(5000),
+    loadCandidateServices(supabase),
   ]);
 
   const allDeals = (dealsResult.data ?? []) as DealRow[];
