@@ -12,8 +12,18 @@ import {
   Users,
 } from "lucide-react";
 import { getServicePackageLabel } from "@/lib/crm/packages";
-import { DealUpdateForm } from "@/components/crm/deal-update-form";
+import { DealDetailsDialog } from "@/components/crm/deal-details-dialog";
 import { PipelineMonthMove } from "@/components/crm/pipeline-month-move";
+
+export type PipelineActivity = {
+  id: string;
+  deal_id: string;
+  commercial_id: string;
+  event_type: string;
+  description: string | null;
+  event_data: Record<string, unknown> | null;
+  occurred_at: string;
+};
 
 export type PipelineDeal = {
   id: string;
@@ -27,8 +37,9 @@ export type PipelineDeal = {
   lost_reason: string | null;
   notes: string | null;
   eligibility_month: string | null;
-  client: { id: string; full_name: string; nif: string } | null;
+  client: { id: string; full_name: string; nif: string; phone: string | null; email: string | null } | null;
   services: { id: string; service_number: string; service_type: string; package_name: string | null; loyalty_end_date: string | null }[];
+  activities: PipelineActivity[];
 };
 
 const STAGES = [
@@ -167,12 +178,19 @@ export function PipelineBoard({ deals }: { deals: PipelineDeal[] }) {
                         <div className="flex items-start gap-2">
                           <GripVertical size={15} className="mt-0.5 shrink-0 text-slate-300 group-hover:text-slate-500" />
                           <div className="min-w-0 flex-1">
-                            <h3 className="break-words text-[13px] font-semibold leading-5 text-slate-900">
-                              {deal.client?.full_name ?? "Cliente sem nome"}
-                            </h3>
-                            <p className="mt-0.5 text-[11px] text-slate-500">
-                              NIF {deal.client?.nif ?? "—"}
-                            </p>
+                            <button
+                              type="button"
+                              onClick={() => setEditing({ deal, targetStage: deal.stage })}
+                              className="block w-full text-left"
+                              aria-label={"Abrir negócio de " + (deal.client?.full_name ?? "cliente sem nome")}
+                            >
+                              <h3 className="break-words text-[13px] font-semibold leading-5 text-blue-800 hover:underline">
+                                {deal.client?.full_name ?? "Cliente sem nome"}
+                              </h3>
+                              <p className="mt-0.5 text-[11px] text-slate-500">
+                                NIF {deal.client?.nif ?? "—"}
+                              </p>
+                            </button>
                           </div>
                         </div>
 
@@ -180,11 +198,11 @@ export function PipelineBoard({ deals }: { deals: PipelineDeal[] }) {
                           <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-600">
                             {dealTypeLabel(deal.deal_type)}
                           </span>
-                          {deal.eligibility_month && (
-                            <span className="rounded-md bg-blue-50 px-2 py-1 text-[10px] font-medium text-blue-700">
-                              Elegível {dateLabel(deal.eligibility_month)}
-                            </span>
-                          )}
+                          <span className="rounded-md bg-blue-50 px-2 py-1 text-[10px] font-medium text-blue-700">
+                            {deal.services.some((service) => service.loyalty_end_date)
+                              ? "Data de fim da fidelização nos serviços abaixo"
+                              : "Sem data de fidelização"}
+                          </span>
                         </div>
 
                         <div className="mt-2 flex flex-wrap gap-1">
@@ -230,7 +248,7 @@ export function PipelineBoard({ deals }: { deals: PipelineDeal[] }) {
                             onClick={() => setEditing({ deal, targetStage: deal.stage })}
                             className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-blue-300 hover:text-blue-700"
                           >
-                            <PencilLine size={12} /> Atualizar
+                            <PencilLine size={12} /> Abrir negócio
                           </button>
                         </div>
                         <PipelineMonthMove
@@ -258,15 +276,9 @@ export function PipelineBoard({ deals }: { deals: PipelineDeal[] }) {
       </div>
 
       {editing && (
-        <DealUpdateForm
+        <DealDetailsDialog
           key={editing.deal.id + ":" + editing.targetStage}
-          deal={{
-            id: editing.deal.id,
-            stage: editing.deal.stage,
-            next_contact_at: editing.deal.next_contact_at,
-            lost_reason: editing.deal.lost_reason,
-            notes: editing.deal.notes,
-          }}
+          deal={editing.deal}
           initialStage={editing.targetStage}
           onClose={closeEditor}
         />
