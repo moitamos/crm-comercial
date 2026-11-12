@@ -127,14 +127,18 @@ function defaultRecycledEndDate() {
   ].join("-");
 }
 function returnToFunnelMonth(endDate: string) {
-  if (!endDate) return "";
-  const date = new Date(endDate + "T12:00:00Z");
-  if (Number.isNaN(date.getTime())) return "";
-  date.setUTCMonth(date.getUTCMonth() - 6);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate)) return "";
+  const [year, month, day] = endDate.split("-").map(Number);
+  const monthIndex = year * 12 + month - 1 - 6;
+  const targetYear = Math.floor(monthIndex / 12);
+  const targetMonth = monthIndex - targetYear * 12;
+  const lastDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  const date = new Date(Date.UTC(targetYear, targetMonth, Math.min(day, lastDay)));
   return date.toLocaleDateString("pt-PT", { month: "long", year: "numeric", timeZone: "UTC" });
 }
-function todayIsoDate() {
+function tomorrowIsoDate() {
   const date = new Date();
+  date.setDate(date.getDate() + 1);
   return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
 }
 
@@ -422,7 +426,7 @@ export function DealDetailsDialog({ deal, initialStage, onClose, displayMode = "
                               <input
                                 id={"lost_date_" + service.id}
                                 type="date"
-                                min={todayIsoDate()}
+                                min={tomorrowIsoDate()}
                                 required
                                 value={endDate}
                                 onChange={(event) => setLostServiceDecisions((current) => ({
