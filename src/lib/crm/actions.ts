@@ -192,6 +192,83 @@ export async function updateClientAction(_previous: FormActionState, formData: F
 
 const DEAL_STAGES = ["to_contact", "negotiation", "scheduled", "future_contact", "sale", "lost"] as const;
 
+function toNextContactTimestamp(value: string) {
+  return value ? new Date(value + "T12:00:00.000Z").toISOString() : null;
+}
+
+function dealActivityError(message: string) {
+  if (message.includes("Não tens acesso") || message.includes("Negócio não encontrado")) {
+    return "Não tens acesso a este negócio ou ele já não existe.";
+  }
+  if (message.includes("Seleciona uma fase válida")) return "Seleciona uma fase válida do funil.";
+  if (message.includes("voltar a contactar")) return "Indica a data em que devemos voltar a contactar o cliente.";
+  if (message.includes("motivo")) return "Indica o motivo pelo qual o negócio foi perdido.";
+  if (message.includes("observação") || message.includes("observacao")) return "Escreve a observação antes de guardar.";
+  if (message.includes("5.000")) return "O texto não pode ultrapassar 5.000 caracteres.";
+  return "Não foi possível registar a atividade. Atualiza a página e tenta novamente.";
+}
+
+export async function recordDealActivityAction(
+  _previous: FormActionState,
+  formData: FormData
+): Promise<FormActionState> {
+  const context = await getActiveUser();
+  if (!context.userId) return { error: context.error ?? "Sessão inválida." };
+
+  const dealId = String(formData.get("deal_id") ?? "").trim();
+  const action = String(formData.get("action") ?? "").trim();
+  const stage = String(formData.get("stage") ?? "").trim();
+  const nextContactDate = String(formData.get("next_contact_date") ?? "").trim();
+  const lostReason = String(formData.get("lost_reason") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dealId)) {
+    return { error: "Negócio inválido." };
+  }
+  if (!["update", "observation", "contact_attempt"].includes(action)) {
+    return { error: "Seleciona uma ação válida." };
+  }
+  if (description.length > 5000) return { error: "O texto não pode ultrapassar 5.000 caracteres." };
+
+  if (action === "update") {
+    if (!DEAL_STAGES.includes(stage as (typeof DEAL_STAGES)[number])) {
+      return { error: "Seleciona uma fase válida do funil." };
+    }
+    if (["scheduled", "future_contact"].includes(stage) &&
+      (!nextContactDate || !validIsoDate(nextContactDate))) {
+      return { error: "Indica a data em que devemos voltar a contactar o cliente." };
+    }
+    if (stage === "lost" && !lostReason) return { error: "Indica o motivo pelo qual o negócio foi perdido." };
+    if (lostReason.length > 1000) return { error: "O motivo de perda não pode ultrapassar 1.000 caracteres." };
+  }
+
+  if (action === "observation" && !description) {
+    return { error: "Escreve a observação antes de guardar." };
+  }
+
+  const { error } = await context.supabase.rpc("record_deal_activity", {
+    p_deal_id: dealId,
+    p_action: action,
+    p_stage: action === "update" ? stage : null,
+    p_next_contact_at: action === "update" ? toNextContactTimestamp(nextContactDate) : null,
+    p_lost_reason: action === "update" ? lostReason || null : null,
+    p_description: description || null,
+  });
+
+  if (error) {
+    console.error("[CRM_RECORD_DEAL_ACTIVITY]", { code: error.code, message: error.message });
+    return { error: dealActivityError(error.message ?? "") };
+  }
+
+  revalidatePath("/pipeline");
+  revalidatePath("/dashboard");
+
+  if (action === "observation") return { success: "Observação registada com data e hora." };
+  if (action === "contact_attempt") return { success: "Tentativa de contacto registada." };
+  return { success: "Negócio atualizado e alteração registada." };
+}
+
+// Keep the previous form action compatible with the new timestamped activity log.
 export async function updateDealAction(_previous: FormActionState, formData: FormData): Promise<FormActionState> {
   const context = await getActiveUser();
   if (!context.userId) return { error: context.error ?? "Sessão inválida." };
@@ -209,46 +286,38 @@ export async function updateDealAction(_previous: FormActionState, formData: For
   if (!DEAL_STAGES.includes(stage as (typeof DEAL_STAGES)[number])) {
     return { error: "Seleciona uma fase válida do funil." };
   }
-  if (["scheduled", "future_contact"].includes(stage)) {
-    if (!nextContactDate || !validIsoDate(nextContactDate)) {
-      return { error: "Indica a data em que devemos voltar a contactar o cliente." };
-    }
+  if (["scheduled", "future_contact"].includes(stage) &&
+    (!nextContactDate || !validIsoDate(nextContactDate))) {
+    return { error: "Indica a data em que devemos voltar a contactar o cliente." };
   }
-  if (stage === "lost" && !lostReason) {
-    return { error: "Indica o motivo pelo qual o negócio foi perdido." };
-  }
-  if (lostReason.length > 1000) return { error: "O motivo de perda não pode ultrapassar 1.000 caracteres." };
-  if (notes.length > 5000) return { error: "As notas não podem ultrapassar 5.000 caracteres." };
+  if (stage === "lost" && !lostReason) return { error: "Indica o motivo pelo qual o negócio foi perdido." };
 
-  const updates: Record<string, unknown> = {
-    stage,
-    next_contact_at: ["scheduled", "future_contact"].includes(stage)
-      ? new Date(nextContactDate + "T12:00:00.000Z").toISOString()
-      : null,
-    lost_reason: stage === "lost" ? lostReason : null,
-    notes: notes || null,
-    updated_at: new Date().toISOString(),
-  };
-  if (registerContact) updates.last_contact_at = new Date().toISOString();
+  const { error } = await context.supabase.rpc("record_deal_activity", {
+    p_deal_id: dealId,
+    p_action: "update",
+    p_stage: stage,
+    p_next_contact_at: toNextContactTimestamp(nextContactDate),
+    p_lost_reason: lostReason || null,
+    p_description: notes || null,
+  });
+  if (error) return { error: dealActivityError(error.message ?? "") };
 
-  const { data: updatedDeal, error } = await context.supabase
-    .from("deals")
-    .update(updates)
-    .eq("id", dealId)
-    .select("id, client_id")
-    .maybeSingle();
-
-  if (error || !updatedDeal) {
-    console.error("[CRM_UPDATE_DEAL]", { code: error?.code, message: error?.message });
-    return { error: "Não foi possível atualizar o negócio. Confirma se continua associado à tua carteira." };
+  if (registerContact) {
+    const contactResult = await context.supabase.rpc("record_deal_activity", {
+      p_deal_id: dealId,
+      p_action: "contact_attempt",
+      p_stage: null,
+      p_next_contact_at: null,
+      p_lost_reason: null,
+      p_description: "Contacto registado através do formulário de atualização.",
+    });
+    if (contactResult.error) return { error: dealActivityError(contactResult.error.message ?? "") };
   }
 
   revalidatePath("/pipeline");
   revalidatePath("/dashboard");
-  revalidatePath("/clients/" + updatedDeal.client_id);
   return { success: "Negócio atualizado." };
 }
-
 
 function validMonthStart(value: string) {
   if (!/^\d{4}-(0[1-9]|1[0-2])-01$/.test(value)) return false;
