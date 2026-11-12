@@ -302,6 +302,7 @@ export async function recordDealActivityAction(
 
   const snapshot = await loadDealActivitySnapshot(context.supabase, dealId);
   revalidatePath("/pipeline");
+  revalidatePath("/pipeline/" + dealId);
   revalidatePath("/dashboard");
 
   if (action === "observation") return { success: "Observação registada com data e hora.", ...snapshot };
@@ -370,6 +371,7 @@ export async function markDealLostAction(
 
   const snapshot = await loadDealActivitySnapshot(context.supabase, dealId);
   revalidatePath("/pipeline");
+  revalidatePath("/pipeline/" + dealId);
   revalidatePath("/dashboard");
   return { success: "Negócio marcado como perdido. As decisões dos serviços foram guardadas.", ...snapshot };
 }
@@ -408,6 +410,7 @@ export async function deleteDealActivityEntriesAction(
 
   const snapshot = await loadDealActivitySnapshot(context.supabase, dealId);
   revalidatePath("/pipeline");
+  revalidatePath("/pipeline/" + dealId);
   revalidatePath("/dashboard");
 
   const deleted = typeof data === "number" ? data : Number(data ?? activityIds.length);
@@ -449,6 +452,7 @@ export async function editDealActivityEntryAction(
 
   const snapshot = await loadDealActivitySnapshot(context.supabase, dealId);
   revalidatePath("/pipeline");
+  revalidatePath("/pipeline/" + dealId);
   revalidatePath("/dashboard");
   return { success: "Entrada do histórico atualizada.", ...snapshot };
 }
@@ -500,6 +504,7 @@ export async function updateDealAction(_previous: FormActionState, formData: For
   }
 
   revalidatePath("/pipeline");
+  revalidatePath("/pipeline/" + dealId);
   revalidatePath("/dashboard");
   return { success: "Negócio atualizado." };
 }
@@ -531,6 +536,7 @@ export async function createMonthlyRenewalDealsAction(
 
   const created = typeof data === "number" ? data : Number(data ?? 0);
   revalidatePath("/pipeline");
+  revalidatePath("/pipeline/" + dealId);
   revalidatePath("/dashboard");
 
   if (created === 0) {
@@ -573,6 +579,7 @@ export async function moveDealToMonthAction(
   }
 
   revalidatePath("/pipeline");
+  revalidatePath("/pipeline/" + dealId);
   revalidatePath("/dashboard");
   return { success: targetMonth ? "Negócio transferido para o novo mês." : "Negócio retirado da organização mensal." };
 }
