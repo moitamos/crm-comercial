@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { BriefcaseBusiness, CalendarClock, Clock3, Search, TrendingUp, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { getServicePackageLabel } from "@/lib/crm/packages";
 import { PipelineBoard, type PipelineDeal } from "@/components/crm/pipeline-board";
+import { PipelineMonthControls, type PipelineMonthOption } from "@/components/crm/pipeline-month-controls";
 
-type Props = { searchParams: Promise<{ q?: string; type?: string }> };
+type Props = { searchParams: Promise<{ q?: string; type?: string; month?: string }> };
 type DealRow = {
   id: string;
   client_id: string;
@@ -19,7 +21,8 @@ type DealRow = {
 };
 type ClientRow = { id: string; full_name: string; nif: string };
 type DealServiceRow = { id: string; deal_id: string; service_id: string; decision: string | null; future_package: string | null };
-type ServiceRow = { id: string; service_number: string; service_type: string; package_name: string | null };
+type ServiceRow = { id: string; service_number: string; service_type: string; package_name: string | null; loyalty_end_date: string | null };
+type CandidateServiceRow = { id: string; client_id: string; loyalty_end_date: string };
 
 const STAGES = [
   { value: "to_contact", label: "Por contactar" },
@@ -59,6 +62,38 @@ function dateLabel(value: string | null) {
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("pt-PT", { timeZone: "Europe/Lisbon" });
 }
 
+function currentMonthStart() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Lisbon",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(new Date());
+  const year = parts.find((part) => part.type === "year")?.value ?? "2026";
+  const month = parts.find((part) => part.type === "month")?.value ?? "01";
+  return year + "-" + month + "-01";
+}
+
+// The exact six-month date keeps the day of the loyalty end date.
+// We group it into a month so dates on day 1 and day 20 enter the same monthly batch.
+function eligibilityMonth(value: string) {
+  const [year, month] = value.slice(0, 7).split("-").map(Number);
+  const monthIndex = year * 12 + month - 1 - 6;
+  const targetYear = Math.floor(monthIndex / 12);
+  const targetMonth = monthIndex - targetYear * 12 + 1;
+  return targetYear + "-" + String(targetMonth).padStart(2, "0") + "-01";
+}
+
+function monthLabel(value: string) {
+  if (value === "unassigned") return "Sem mês definido";
+  const date = new Date(value + "T12:00:00Z");
+  const label = date.toLocaleDateString("pt-PT", { month: "long", year: "numeric", timeZone: "UTC" });
+  return label.charAt(0).toLocaleUpperCase("pt-PT") + label.slice(1);
+}
+
+function validMonth(value: string | undefined) {
+  return Boolean(value && /^\d{4}-(0[1-9]|1[0-2])-01$/.test(value));
+}
+
 function Metric({ label, value, icon: Icon }: { label: string; value: number; icon: typeof Users }) {
   return (
     <div className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
@@ -73,13 +108,21 @@ export default async function PipelinePage({ searchParams }: Props) {
   const params = await searchParams;
   const query = (params.q ?? "").trim().slice(0, 80);
   const selectedType = DEAL_TYPES.some((item) => item.value === params.type) ? params.type ?? "" : "";
-
   const supabase = await createClient();
-  const dealsResult = await supabase.from("deals")
-    .select("id, client_id, commercial_id, deal_type, stage, created_at, last_contact_at, next_contact_at, lost_reason, notes, eligibility_month", { count: "exact" })
-    .order("eligibility_month", { ascending: true, nullsFirst: false })
-    .order("created_at", { ascending: false })
-    .limit(5000);
+
+  const [dealsResult, candidateServicesResult] = await Promise.all([
+    supabase.from("deals")
+      .select("id, client_id, commercial_id, deal_type, stage, created_at, last_contact_at, next_contact_at, lost_reason, notes, eligibility_month", { count: "exact" })
+      .order("eligibility_month", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .limit(5000),
+    supabase.from("services")
+      .select("id, client_id, loyalty_end_date")
+      .eq("is_active", true)
+      .not("loyalty_end_date", "is", null)
+      .order("id", { ascending: true })
+      .limit(5000),
+  ]);
 
   const allDeals = (dealsResult.data ?? []) as DealRow[];
   const dealIds = allDeals.map((deal) => deal.id);
@@ -96,7 +139,7 @@ export default async function PipelinePage({ searchParams }: Props) {
   const dealServices = dealServicesResult.data;
   const serviceIds = Array.from(new Set(dealServices.map((item) => item.service_id)));
   const servicesResult = await loadChunks<ServiceRow>(serviceIds, async (batch) =>
-    await supabase.from("services").select("id, service_number, service_type, package_name").in("id", batch)
+    await supabase.from("services").select("id, service_number, service_type, package_name, loyalty_end_date").in("id", batch)
   );
 
   const clients = new Map(clientsResult.data.map((client) => [client.id, client]));
@@ -116,17 +159,47 @@ export default async function PipelinePage({ searchParams }: Props) {
     services: servicesByDeal.get(deal.id) ?? [],
   }));
 
-  const stageCounts = new Map<string, number>(STAGES.map((stage) => [stage.value, 0]));
-  for (const deal of allDeals) stageCounts.set(deal.stage, (stageCounts.get(deal.stage) ?? 0) + 1);
-  const openCount = allDeals.filter((deal) => !["sale", "lost"].includes(deal.stage)).length;
-  const followUpCount = allDeals.filter((deal) => ["scheduled", "future_contact"].includes(deal.stage)).length;
-  const now = Date.now();
-  const overdueCount = allDeals.filter((deal) =>
-    !["sale", "lost"].includes(deal.stage) && deal.next_contact_at && new Date(deal.next_contact_at).getTime() < now
-  ).length;
+  const currentMonth = currentMonthStart();
+  const existingMonthDeals = new Set(
+    allDeals
+      .filter((deal) => deal.deal_type === "portfolio_renewal" && deal.eligibility_month)
+      .map((deal) => deal.client_id + "|" + deal.eligibility_month)
+  );
+  const linkedServiceIds = new Set(dealServices.map((link) => link.service_id));
+  const candidatesByMonth = new Map<string, Set<string>>();
+  for (const service of (candidateServicesResult.data ?? []) as CandidateServiceRow[]) {
+    if (!service.loyalty_end_date || linkedServiceIds.has(service.id)) continue;
+    const month = eligibilityMonth(service.loyalty_end_date);
+    if (month < currentMonth || existingMonthDeals.has(service.client_id + "|" + month)) continue;
+    const clientsInMonth = candidatesByMonth.get(month) ?? new Set<string>();
+    clientsInMonth.add(service.client_id);
+    candidatesByMonth.set(month, clientsInMonth);
+  }
+
+  const monthKeys = new Set<string>([currentMonth]);
+  for (const month of candidatesByMonth.keys()) monthKeys.add(month);
+  for (const deal of allDeals) {
+    if (deal.eligibility_month) monthKeys.add(deal.eligibility_month);
+  }
+  const sortedMonths = Array.from(monthKeys).sort();
+  const monthOptions: PipelineMonthOption[] = [
+    { value: "unassigned", label: "Sem mês definido" },
+    ...sortedMonths.map((month) => ({ value: month, label: monthLabel(month) })),
+  ];
+
+  const selectedMonth = params.month === "unassigned"
+    ? "unassigned"
+    : validMonth(params.month) && monthKeys.has(params.month ?? "")
+      ? params.month as string
+      : currentMonth;
+  const monthDeals = allDealViews.filter((deal) =>
+    selectedMonth === "unassigned"
+      ? !deal.eligibility_month
+      : deal.eligibility_month === selectedMonth
+  );
 
   const searchNeedle = normalized(query);
-  const filtered = allDealViews.filter((deal) => {
+  const filtered = monthDeals.filter((deal) => {
     if (selectedType && deal.deal_type !== selectedType) return false;
     if (!searchNeedle) return true;
     const searchable = [
@@ -138,7 +211,20 @@ export default async function PipelinePage({ searchParams }: Props) {
     return normalized(searchable).includes(searchNeedle);
   });
 
-  const queryError = dealsResult.error || clientsResult.error || dealServicesResult.error || servicesResult.error;
+  const stageCounts = new Map<string, number>(STAGES.map((stage) => [stage.value, 0]));
+  for (const deal of monthDeals) stageCounts.set(deal.stage, (stageCounts.get(deal.stage) ?? 0) + 1);
+  const openCount = monthDeals.filter((deal) => !["sale", "lost"].includes(deal.stage)).length;
+  const followUpCount = monthDeals.filter((deal) => ["scheduled", "future_contact"].includes(deal.stage)).length;
+  const now = Date.now();
+  const overdueCount = monthDeals.filter((deal) =>
+    !["sale", "lost"].includes(deal.stage) && deal.next_contact_at && new Date(deal.next_contact_at).getTime() < now
+  ).length;
+  const candidateCount = selectedMonth === "unassigned"
+    ? 0
+    : candidatesByMonth.get(selectedMonth)?.size ?? 0;
+
+  const queryError = dealsResult.error || clientsResult.error || dealServicesResult.error
+    || servicesResult.error || candidateServicesResult.error;
   const truncated = (dealsResult.count ?? allDeals.length) > allDeals.length;
 
   return (
@@ -147,18 +233,26 @@ export default async function PipelinePage({ searchParams }: Props) {
         <div>
           <p className="text-sm text-slate-500">Gestão de oportunidades comerciais</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">Funil de vendas</h1>
-          <p className="mt-1 text-sm text-slate-500">Organiza os negócios por fase e acompanha a evolução de cada oportunidade.</p>
+          <p className="mt-1 text-sm text-slate-500">Os negócios estão organizados pelo mês em que entram no período de renovação.</p>
         </div>
         <Link href="/clients" className="inline-flex items-center gap-2 self-start rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:self-auto">
           <Users size={16} /> Consultar clientes
         </Link>
       </div>
 
+      <PipelineMonthControls
+        months={monthOptions}
+        selectedMonth={selectedMonth}
+        candidateCount={candidateCount}
+        query={query}
+        type={selectedType}
+      />
+
       <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
-        <Metric label="Negócios em aberto" value={openCount} icon={BriefcaseBusiness} />
+        <Metric label="Negócios em aberto neste mês" value={openCount} icon={BriefcaseBusiness} />
         <Metric label="Com contacto agendado" value={followUpCount} icon={CalendarClock} />
         <Metric label="Contactos em atraso" value={overdueCount} icon={Clock3} />
-        <Metric label="Vendas concluídas" value={stageCounts.get("sale") ?? 0} icon={TrendingUp} />
+        <Metric label="Vendas concluídas neste mês" value={stageCounts.get("sale") ?? 0} icon={TrendingUp} />
       </div>
 
       {queryError && (
@@ -173,6 +267,7 @@ export default async function PipelinePage({ searchParams }: Props) {
       )}
 
       <form method="get" className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-2 shadow-sm sm:flex-row">
+        <input type="hidden" name="month" value={selectedMonth} />
         <div className="flex min-w-0 flex-1 items-center gap-2 px-2">
           <Search size={16} className="shrink-0 text-slate-400" />
           <input name="q" defaultValue={query} placeholder="Pesquisar por cliente, NIF, serviço ou pacote"
@@ -185,21 +280,21 @@ export default async function PipelinePage({ searchParams }: Props) {
         </select>
         <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">Pesquisar</button>
         {(query || selectedType) && (
-          <Link href="/pipeline" className="rounded-lg px-3 py-2 text-center text-sm font-medium text-slate-500 hover:bg-slate-50">Limpar</Link>
+          <Link href={"/pipeline?month=" + encodeURIComponent(selectedMonth)} className="rounded-lg px-3 py-2 text-center text-sm font-medium text-slate-500 hover:bg-slate-50">Limpar</Link>
         )}
       </form>
 
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-slate-500">
-          {filtered.length.toLocaleString("pt-PT")} negócios encontrados
-          {(query || selectedType) ? " · Filtros aplicados" : " · Todas as fases"}
+          {filtered.length.toLocaleString("pt-PT")} negócios encontrados · {monthLabel(selectedMonth)}
+          {(query || selectedType) ? " · Filtros aplicados" : ""}
         </p>
         <p className="hidden items-center gap-1 text-xs text-slate-400 sm:flex">
           <BriefcaseBusiness size={13} /> {STAGES.length} fases
         </p>
       </div>
 
-      <PipelineBoard deals={filtered} />
+      <PipelineBoard deals={filtered} months={monthOptions} />
     </main>
   );
 }
