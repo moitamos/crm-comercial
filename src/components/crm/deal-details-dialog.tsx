@@ -91,6 +91,7 @@ function eventTitle(activity: Activity) {
     case "stage_changed": return "Fase alterada";
     case "deal_updated": return "Dados de acompanhamento atualizados";
     case "month_moved": return "Mês do negócio alterado";
+    case "deal_lost": return "Negócio marcado como perdido";
     default: return "Atividade registada";
   }
 }
@@ -99,6 +100,7 @@ function eventDescription(activity: Activity) {
     return "Fase: " + stageLabel(activity.event_data?.old_stage) + " → " + stageLabel(activity.event_data?.new_stage);
   }
   if (activity.event_type === "deal_updated") return "Dados de acompanhamento atualizados.";
+  if (activity.event_type === "deal_lost") return activity.description;
   return activity.description;
 }
 function servicePackage(service: Service) {
@@ -261,20 +263,34 @@ export function DealDetailsDialog({ deal, initialStage, onClose, displayMode = "
     ["observation", "contact_attempt"].includes(selectedActivity.event_type));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/60 p-3 backdrop-blur-sm sm:p-6"
-      role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="deal-details-title"
-        className="my-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+    <div
+      className={isPage
+        ? "min-h-screen bg-slate-50 px-4 py-6 sm:px-6"
+        : "fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/60 p-3 backdrop-blur-sm sm:p-6"}
+      role={isPage ? undefined : "presentation"}
+      onMouseDown={isPage ? undefined : (event) => { if (event.target === event.currentTarget) onClose?.(); }}
+    >
+      <section role={isPage ? undefined : "dialog"} aria-modal={isPage ? undefined : true} aria-labelledby="deal-details-title"
+        className={(isPage ? "mx-auto w-full max-w-5xl" : "my-auto w-full max-w-3xl") + " overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"}>
         <header className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 sm:px-6">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Detalhes do negócio</p>
             <h2 id="deal-details-title" className="mt-1 break-words text-xl font-semibold text-slate-900">{deal.client?.full_name ?? "Cliente sem nome"}</h2>
             <p className="mt-1 text-xs text-slate-500">NIF {deal.client?.nif ?? "—"}</p>
           </div>
-          <button type="button" onClick={onClose} aria-label="Fechar" className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X size={19} /></button>
+          <div className="flex shrink-0 items-center gap-2">
+            {isPage ? (
+              <Link href={backHref} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Voltar ao funil</Link>
+            ) : (
+              <>
+                <Link href={dedicatedPageHref} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-800 hover:bg-blue-100">Abrir em página</Link>
+                <button type="button" onClick={() => onClose?.()} aria-label="Fechar" className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X size={19} /></button>
+              </>
+            )}
+          </div>
         </header>
 
-        <div className="max-h-[calc(100vh-110px)] space-y-5 overflow-y-auto p-5 sm:p-6">
+        <div className={(isPage ? "space-y-5 p-5 sm:p-6" : "max-h-[calc(100vh-110px)] space-y-5 overflow-y-auto p-5 sm:p-6")}>
           <section className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2">
             <div>
               <p className="text-[11px] font-semibold uppercase text-slate-500">Último contacto</p>
@@ -328,10 +344,17 @@ export function DealDetailsDialog({ deal, initialStage, onClose, displayMode = "
 
           <section className="rounded-xl border border-slate-200 p-4">
             <div className="mb-3 flex items-center gap-2"><CheckCircle2 size={16} className="text-blue-700" /><h3 className="text-sm font-semibold text-slate-900">Fase do negócio</h3></div>
-            <form action={updateAction} className="space-y-3">
+            <form action={stage === "lost" && deal.stage !== "lost" ? lostAction : updateAction} className="space-y-3">
               <input type="hidden" name="deal_id" value={deal.id} />
               <input type="hidden" name="action" value="update" />
               <input type="hidden" name="stage" value={stage} />
+              <input type="hidden" name="service_decisions" value={JSON.stringify(deal.services.map((service) => ({
+                service_id: service.id,
+                decision: lostServiceDecisions[service.id]?.decision ?? "",
+                loyalty_end_date: lostServiceDecisions[service.id]?.decision === "recycle"
+                  ? lostServiceDecisions[service.id]?.loyalty_end_date ?? ""
+                  : null,
+              })))} />
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {STAGES.map((item) => (
                   <button
@@ -352,10 +375,77 @@ export function DealDetailsDialog({ deal, initialStage, onClose, displayMode = "
                 <input id={"deal_next_contact_" + deal.id} name="next_contact_date" type="date" value={nextContactDate} onChange={(event) => setNextContactDate(event.target.value)} required
                   className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-600" />
               </div>}
-              {stage === "lost" && <div>
-                <label htmlFor={"deal_lost_reason_" + deal.id} className="mb-1.5 block text-xs font-semibold text-slate-600">Motivo da perda *</label>
-                <textarea id={"deal_lost_reason_" + deal.id} name="lost_reason" rows={2} value={lostReason} onChange={(event) => setLostReason(event.target.value)} required maxLength={1000}
-                  placeholder="Ex.: cliente recusou, concorrência, sem interesse..." className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-600" />
+              {stage === "lost" && <div className="space-y-3 rounded-xl border border-rose-200 bg-rose-50/40 p-3">
+                <div>
+                  <label htmlFor={"deal_lost_reason_" + deal.id} className="mb-1.5 block text-xs font-semibold text-slate-700">Motivo da perda *</label>
+                  <textarea id={"deal_lost_reason_" + deal.id} name="lost_reason" rows={2} value={lostReason} onChange={(event) => setLostReason(event.target.value)} required maxLength={1000}
+                    placeholder="Ex.: cliente recusou, concorrência, sem interesse..." className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-600" />
+                </div>
+                {deal.stage === "lost" ? (
+                  <p className="text-xs text-slate-600">Este negócio já está marcado como perdido. Seleciona outra fase para o reabrir.</p>
+                ) : (
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">O que queres fazer com cada serviço?</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">A decisão é individual. O cliente fica guardado em qualquer dos casos.</p>
+                    </div>
+                    {deal.services.length ? deal.services.map((service) => {
+                      const choice = lostServiceDecisions[service.id]?.decision ?? "";
+                      const endDate = lostServiceDecisions[service.id]?.loyalty_end_date ?? defaultRecycledEndDate();
+                      return (
+                        <div key={service.id} className="rounded-lg border border-slate-200 bg-white p-3">
+                          <div className="mb-2">
+                            <p className="text-sm font-semibold text-slate-800">{servicePackage(service)}</p>
+                            <p className="text-xs text-slate-500">N.º {service.service_number}</p>
+                          </div>
+                          <label htmlFor={"lost_decision_" + service.id} className="mb-1 block text-xs font-medium text-slate-600">Destino deste serviço *</label>
+                          <select
+                            id={"lost_decision_" + service.id}
+                            required
+                            value={choice}
+                            onChange={(event) => setLostServiceDecisions((current) => ({
+                              ...current,
+                              [service.id]: {
+                                decision: event.target.value as LostServiceDecision["decision"],
+                                loyalty_end_date: current[service.id]?.loyalty_end_date || defaultRecycledEndDate(),
+                              },
+                            }))}
+                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-600"
+                          >
+                            <option value="">Selecionar decisão</option>
+                            <option value="recycle">Reciclar — voltar ao funil mais tarde</option>
+                            <option value="close">Perder definitivamente este serviço</option>
+                          </select>
+                          {choice === "recycle" && (
+                            <div className="mt-3 rounded-lg bg-blue-50 p-3">
+                              <label htmlFor={"lost_date_" + service.id} className="mb-1 block text-xs font-semibold text-blue-900">Nova data de fim de fidelização *</label>
+                              <input
+                                id={"lost_date_" + service.id}
+                                type="date"
+                                min={todayIsoDate()}
+                                required
+                                value={endDate}
+                                onChange={(event) => setLostServiceDecisions((current) => ({
+                                  ...current,
+                                  [service.id]: { decision: "recycle", loyalty_end_date: event.target.value },
+                                }))}
+                                className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-600"
+                              />
+                              <p className="mt-2 text-xs leading-5 text-blue-800">
+                                Com esta data, o serviço volta a aparecer nos negócios de renovação em <strong>{returnToFunnelMonth(endDate) || "—"}</strong>, seis meses antes do fim da fidelização.
+                              </p>
+                            </div>
+                          )}
+                          {choice === "close" && (
+                            <p className="mt-2 text-xs leading-5 text-slate-600">O serviço fica inactivo e deixa de gerar oportunidades. O cliente e o histórico continuam guardados.</p>
+                          )}
+                        </div>
+                      );
+                    }) : (
+                      <p className="rounded-lg border border-dashed border-slate-300 bg-white p-3 text-xs text-slate-600">Este negócio não tem serviços associados. Podes concluir a perda apenas com o motivo.</p>
+                    )}
+                  </div>
+                )}
               </div>}
               {stage !== "lost" && <input type="hidden" name="lost_reason" value="" />}
               <div>
@@ -365,7 +455,17 @@ export function DealDetailsDialog({ deal, initialStage, onClose, displayMode = "
               </div>
               {updateState.error && <p role="alert" className="text-xs text-rose-700">{updateState.error}</p>}
               {updateState.success && <p role="status" className="text-xs text-emerald-700">{updateState.success}</p>}
-              <div className="flex justify-end"><button type="submit" disabled={updatePending} className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60">{updatePending ? "A guardar..." : "Guardar alterações"}</button></div>
+              {lostState.error && <p role="alert" className="text-xs text-rose-700">{lostState.error}</p>}
+              {lostState.success && <p role="status" className="text-xs text-emerald-700">{lostState.success}</p>}
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={updatePending || lostPending || (stage === "lost" && deal.stage === "lost")}
+                  className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60"
+                >
+                  {lostPending ? "A registar perda..." : updatePending ? "A guardar..." : stage === "lost" && deal.stage !== "lost" ? "Confirmar negócio perdido" : "Guardar alterações"}
+                </button>
+              </div>
             </form>
           </section>
 
@@ -470,7 +570,11 @@ export function DealDetailsDialog({ deal, initialStage, onClose, displayMode = "
           </section>
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
             <p className="text-xs text-slate-500">Criado em {dateTimeLabel(deal.created_at)}</p>
-            <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Fechar</button>
+            {isPage ? (
+              <Link href={backHref} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Voltar ao funil</Link>
+            ) : (
+              <button type="button" onClick={() => onClose?.()} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Fechar</button>
+            )}
           </div>
         </div>
       </section>
