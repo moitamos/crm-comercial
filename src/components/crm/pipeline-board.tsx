@@ -192,6 +192,7 @@ export function PipelineBoard({ deals, months }: { deals: PipelineDeal[]; months
                           {deal.services.slice(0, 3).map((service, index) => (
                             <span key={service.id} className="max-w-full truncate rounded-md border border-slate-200 px-1.5 py-1 text-[10px] text-slate-600">
                               {serviceLabels[index]} · {service.service_number}
+                              {service.loyalty_end_date ? " · Fidelização até " + dateLabel(service.loyalty_end_date) : ""}
                             </span>
                           ))}
                           {deal.services.length > 3 && (
