@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
 import Link from "next/link";
 import {
   BriefcaseBusiness,
@@ -79,6 +79,18 @@ export function PipelineBoard({ deals }: { deals: PipelineDeal[] }) {
   const [dropStage, setDropStage] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ deal: PipelineDeal; targetStage: string } | null>(null);
   const closeEditor = useCallback(() => setEditing(null), []);
+
+  useEffect(() => {
+    setEditing((current) => {
+      if (!current) return current;
+      const refreshedDeal = deals.find((deal) => deal.id === current.deal.id);
+      if (!refreshedDeal) return current;
+      const targetStage = current.targetStage === current.deal.stage
+        ? refreshedDeal.stage
+        : current.targetStage;
+      return { deal: refreshedDeal, targetStage };
+    });
+  }, [deals]);
 
   const groupedDeals = useMemo(() => {
     const grouped: Record<string, PipelineDeal[]> = {};
