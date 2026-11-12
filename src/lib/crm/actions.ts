@@ -536,7 +536,6 @@ export async function createMonthlyRenewalDealsAction(
 
   const created = typeof data === "number" ? data : Number(data ?? 0);
   revalidatePath("/pipeline");
-  revalidatePath("/pipeline/" + dealId);
   revalidatePath("/dashboard");
 
   if (created === 0) {
