@@ -226,7 +226,7 @@ export default async function PipelinePage({ searchParams }: Props) {
   const currentMonth = currentMonthStart();
   const existingMonthDeals = new Set(
     allDeals
-      .filter((deal) => deal.deal_type === "portfolio_renewal" && deal.eligibility_month)
+      .filter((deal) => deal.deal_type === "portfolio_renewal" && !["lost", "sale"].includes(deal.stage) && deal.eligibility_month)
       .map((deal) => deal.client_id + "|" + deal.eligibility_month)
   );
   const stageByDealId = new Map(allDeals.map((deal) => [deal.id, deal.stage]));
