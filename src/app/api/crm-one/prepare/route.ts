@@ -56,6 +56,35 @@ export async function POST(request: Request) {
   if (existingError) return externalJson({ error: "Erro ao verificar duplicados." }, 500);
   if (existing) return externalJson({ ok: true, already_exists: true, id: existing.id });
 
+  const { data: previous, error: pendingError } = await admin.from("crm_one_import_uploads")
+    .select("id,token_id,created_by,ncc,issued_at,expected_bytes,expected_sha256,storage_path,expires_at,status")
+    .eq("nif", nif).eq("service_number", serviceNumber)
+    .eq("document_number", doc).maybeSingle();
+  if (pendingError) return externalJson({ error: "Erro ao verificar uma importação pendente." }, 500);
+  if (previous) {
+    if (previous.status === "pending" && new Date(previous.expires_at).getTime() <= Date.now()) {
+      // Expired reservations cannot block the same document forever.
+      await admin.storage.from("crm-invoices").remove([previous.storage_path]);
+      const { error: cleanupError } = await admin.from("crm_one_import_uploads").delete().eq("id", previous.id);
+      if (cleanupError) return externalJson({ error: "Não foi possível limpar a importação expirada." }, 500);
+    } else if (previous.status === "pending" &&
+        previous.token_id === grant.id && previous.created_by === grant.created_by &&
+        previous.ncc === ncc && previous.issued_at === date &&
+        previous.expected_bytes === bytes && previous.expected_sha256 === sha256) {
+      const { data: resumable, error: signingError } = await admin.storage.from("crm-invoices")
+        .createSignedUploadUrl(previous.storage_path);
+      if (signingError || !resumable) return externalJson({ error: "Não foi possível recuperar o upload." }, 500);
+      return externalJson({
+        ok: true, already_exists: false, recovered: true,
+        upload_id: previous.id, upload_url: resumable.signedUrl, expires_at: previous.expires_at,
+      });
+    } else {
+      return externalJson({
+        error: "Já existe uma importação deste documento. Confirma o resultado antes de repetir.",
+      }, 409);
+    }
+  }
+
   const { count, error: countError } = await admin.from("crm_one_import_uploads")
     .select("id", { count: "exact", head: true }).eq("token_id", grant.id);
   if (countError) return externalJson({ error: "Não foi possível verificar limites do lote." }, 500);
