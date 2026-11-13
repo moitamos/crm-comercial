@@ -24,6 +24,7 @@ type ServiceRow = {
   service_number: string;
   service_type: string;
   package_name: string | null;
+  current_monthly_fee: number | string | null;
   loyalty_end_date: string | null;
   source_data: unknown;
 };
@@ -69,7 +70,7 @@ export default async function DealDetailPage({ params, searchParams }: Props) {
   const [servicesResult, adminsResult] = await Promise.all([
     serviceIds.length
       ? supabase.from("services")
-          .select("id, service_number, service_type, package_name, loyalty_end_date, source_data")
+          .select("id, service_number, service_type, package_name, current_monthly_fee, loyalty_end_date, source_data")
           .in("id", serviceIds)
       : Promise.resolve({ data: [], error: null }),
     supabase.from("client_administrators")

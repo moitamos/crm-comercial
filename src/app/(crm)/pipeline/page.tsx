@@ -38,7 +38,7 @@ type InteractionRow = {
   event_data: Record<string, unknown> | null;
   occurred_at: string;
 };
-type ServiceRow = { id: string; service_number: string; service_type: string; package_name: string | null; loyalty_end_date: string | null; source_data: unknown };
+type ServiceRow = { id: string; service_number: string; service_type: string; package_name: string | null; current_monthly_fee: number | string | null; loyalty_end_date: string | null; source_data: unknown };
 type CandidateServiceRow = { id: string; client_id: string; loyalty_end_date: string };
 
 const STAGES = [
@@ -179,7 +179,7 @@ export default async function PipelinePage({ searchParams }: Props) {
   const dealServices = dealServicesResult.data;
   const serviceIds = Array.from(new Set(dealServices.map((item) => item.service_id)));
   const servicesResult = await loadChunks<ServiceRow>(serviceIds, async (batch) =>
-    await supabase.from("services").select("id, service_number, service_type, package_name, loyalty_end_date, source_data").in("id", batch)
+    await supabase.from("services").select("id, service_number, service_type, package_name, current_monthly_fee, loyalty_end_date, source_data").in("id", batch)
   );
 
   const clients = new Map(clientsResult.data.map((client) => [client.id, client]));

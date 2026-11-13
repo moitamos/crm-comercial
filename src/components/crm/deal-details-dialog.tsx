@@ -21,9 +21,10 @@ import {
   deleteDealActivityEntriesAction,
   editDealActivityEntryAction,
   markDealLostAction,
+  markDealSaleAction,
   recordDealActivityAction,
 } from "@/lib/crm/actions";
-import { getServicePackageLabel } from "@/lib/crm/packages";
+import { getServicePackageFamily, getServicePackageLabel, SERVICE_PACKAGE_GROUPS } from "@/lib/crm/packages";
 import type { DealActivityStateItem, DealSnapshotState, FormActionState } from "@/lib/crm/types";
 
 const STAGES = [
@@ -41,6 +42,7 @@ type Service = {
   service_number: string;
   service_type: string;
   package_name: string | null;
+  current_monthly_fee: number | string | null;
   loyalty_end_date: string | null;
   source_data: unknown;
 };
@@ -111,6 +113,12 @@ function servicePackage(service: Service) {
   );
 }
 type LostServiceDecision = { decision: "" | "recycle" | "close"; loyalty_end_date: string };
+type SaleServiceDecision = {
+  decision: "" | "renew" | "keep_active" | "cancel";
+  before_monthly_fee: string;
+  after_monthly_fee: string;
+  after_package: string;
+};
 function defaultRecycledEndDate() {
   const today = new Date();
   const year = today.getFullYear();
@@ -141,6 +149,35 @@ function tomorrowIsoDate() {
   date.setDate(date.getDate() + 1);
   return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
 }
+function defaultSaleServiceDecision(service: Service): SaleServiceDecision {
+  const currentFee = service.current_monthly_fee === null ? "" : String(service.current_monthly_fee);
+  const currentPackage = servicePackage(service);
+  return {
+    decision: "",
+    before_monthly_fee: currentFee,
+    after_monthly_fee: currentFee,
+    after_package: SERVICE_PACKAGE_GROUPS.includes(currentPackage as (typeof SERVICE_PACKAGE_GROUPS)[number]) ? currentPackage : "",
+  };
+}
+function estimateSalePoints(service: Service, decision: SaleServiceDecision) {
+  if (!decision.decision) return 0;
+  const packageGroup = decision.decision === "renew" ? decision.after_package : servicePackage(service);
+  const family = getServicePackageFamily(packageGroup);
+  if (family === "other") return 0;
+  const before = Number(decision.before_monthly_fee.replace(",", "."));
+  const after = decision.decision === "cancel"
+    ? 0
+    : decision.decision === "keep_active"
+      ? before
+      : Number(decision.after_monthly_fee.replace(",", "."));
+  if (!Number.isFinite(before) || !Number.isFinite(after)) return 0;
+  const rates = family === "mxo"
+    ? { increase: 0.04, reduction: 0.02, maintenance: 0.03 }
+    : { increase: 0.033, reduction: 0.018, maintenance: 0.025 };
+  if (after > before) return Math.round((after - before) * rates.increase * 100) / 100;
+  if (after < before) return Math.round((before - after) * rates.reduction * 100) / 100;
+  return Math.round(before * rates.maintenance * 100) / 100;
+}
 
 export function DealDetailsDialog({ deal, initialStage, onClose, displayMode = "dialog", backHref = "/pipeline" }: {
   deal: Deal;
@@ -162,9 +199,13 @@ export function DealDetailsDialog({ deal, initialStage, onClose, displayMode = "
   const [lostServiceDecisions, setLostServiceDecisions] = useState<Record<string, LostServiceDecision>>(() =>
     Object.fromEntries(deal.services.map((service) => [service.id, { decision: "", loyalty_end_date: defaultRecycledEndDate() }]))
   );
+  const [saleServiceDecisions, setSaleServiceDecisions] = useState<Record<string, SaleServiceDecision>>(() =>
+    Object.fromEntries(deal.services.map((service) => [service.id, defaultSaleServiceDecision(service)]))
+  );
 
   const [updateState, updateAction, updatePending] = useActionState(recordDealActivityAction, {} as FormActionState);
   const [lostState, lostAction, lostPending] = useActionState(markDealLostAction, {} as FormActionState);
+  const [saleState, saleAction, salePending] = useActionState(markDealSaleAction, {} as FormActionState);
   const [contactState, contactAction, contactPending] = useActionState(recordDealActivityAction, {} as FormActionState);
   const [noteState, noteAction, notePending] = useActionState(recordDealActivityAction, {} as FormActionState);
   const [deleteState, deleteAction, deletePending] = useActionState(deleteDealActivityEntriesAction, {} as FormActionState);
@@ -198,6 +239,10 @@ export function DealDetailsDialog({ deal, initialStage, onClose, displayMode = "
       service.id,
       { decision: "", loyalty_end_date: defaultRecycledEndDate() },
     ])));
+    setSaleServiceDecisions(Object.fromEntries(deal.services.map((service) => [
+      service.id,
+      defaultSaleServiceDecision(service),
+    ])));
   }, [deal.id, deal.stage, deal.last_contact_at, deal.next_contact_at, deal.lost_reason, deal.activities, deal.services, initialStage]);
 
   useEffect(() => {
@@ -211,6 +256,12 @@ export function DealDetailsDialog({ deal, initialStage, onClose, displayMode = "
     applySnapshot(lostState.dealSnapshot, lostState.activities);
     router.refresh();
   }, [lostState, router]);
+
+  useEffect(() => {
+    if (!saleState.success) return;
+    applySnapshot(saleState.dealSnapshot, saleState.activities);
+    router.refresh();
+  }, [saleState, router]);
 
   useEffect(() => {
     if (!contactState.success) return;
@@ -348,7 +399,7 @@ export function DealDetailsDialog({ deal, initialStage, onClose, displayMode = "
 
           <section className="rounded-xl border border-slate-200 p-4">
             <div className="mb-3 flex items-center gap-2"><CheckCircle2 size={16} className="text-blue-700" /><h3 className="text-sm font-semibold text-slate-900">Fase do negócio</h3></div>
-            <form action={stage === "lost" && deal.stage !== "lost" ? lostAction : updateAction} className="space-y-3">
+            <form action={stage === "lost" && deal.stage !== "lost" ? lostAction : stage === "sale" && deal.stage !== "sale" ? saleAction : updateAction} className="space-y-3">
               <input type="hidden" name="deal_id" value={deal.id} />
               <input type="hidden" name="action" value="update" />
               <input type="hidden" name="stage" value={stage} />
@@ -359,6 +410,24 @@ export function DealDetailsDialog({ deal, initialStage, onClose, displayMode = "
                   ? lostServiceDecisions[service.id]?.loyalty_end_date ?? ""
                   : null,
               })))} />
+              <input type="hidden" name="sale_decisions" value={JSON.stringify(deal.services.map((service) => {
+                const decision = saleServiceDecisions[service.id] ?? defaultSaleServiceDecision(service);
+                return {
+                  service_id: service.id,
+                  decision: decision.decision,
+                  before_monthly_fee: decision.before_monthly_fee,
+                  after_monthly_fee: decision.decision === "cancel"
+                    ? "0"
+                    : decision.decision === "keep_active"
+                      ? decision.before_monthly_fee
+                      : decision.after_monthly_fee,
+                  after_package: decision.decision === "renew"
+                    ? decision.after_package
+                    : decision.decision === "keep_active"
+                      ? servicePackage(service)
+                      : null,
+                };
+              }))} />
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {STAGES.map((item) => (
                   <button
@@ -452,6 +521,117 @@ export function DealDetailsDialog({ deal, initialStage, onClose, displayMode = "
                 )}
               </div>}
               {stage !== "lost" && <input type="hidden" name="lost_reason" value="" />}
+              {stage === "sale" && deal.stage !== "sale" && <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50/40 p-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">Registar o resultado de cada serviço</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-600">Escolhe se renovou, se se mantém activo ou se foi cancelado. Preenche a mensalidade actual; para renovações indica também o novo pacote e a nova mensalidade.</p>
+                </div>
+                {deal.services.length ? deal.services.map((service) => {
+                  const choice = saleServiceDecisions[service.id] ?? defaultSaleServiceDecision(service);
+                  const points = estimateSalePoints(service, choice);
+                  return (
+                    <div key={service.id} className="space-y-3 rounded-lg border border-slate-200 bg-white p-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">{servicePackage(service)}</p>
+                        <p className="text-xs text-slate-500">N.º {service.service_number}</p>
+                      </div>
+                      <div>
+                        <label htmlFor={"sale_decision_" + service.id} className="mb-1 block text-xs font-medium text-slate-600">Resultado deste serviço *</label>
+                        <select
+                          id={"sale_decision_" + service.id}
+                          required
+                          value={choice.decision}
+                          onChange={(event) => setSaleServiceDecisions((current) => {
+                            const previous = current[service.id] ?? defaultSaleServiceDecision(service);
+                            const decision = event.target.value as SaleServiceDecision["decision"];
+                            return {
+                              ...current,
+                              [service.id]: {
+                                ...previous,
+                                decision,
+                                after_monthly_fee: decision === "keep_active" ? previous.before_monthly_fee : decision === "cancel" ? "0" : previous.after_monthly_fee,
+                                after_package: decision === "keep_active" ? servicePackage(service) : previous.after_package,
+                              },
+                            };
+                          })}
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-600"
+                        >
+                          <option value="">Selecionar resultado</option>
+                          <option value="renew">Renovado / pacote alterado</option>
+                          <option value="keep_active">Mantido activo, sem alteração</option>
+                          <option value="cancel">Cancelado</option>
+                        </select>
+                      </div>
+                      {choice.decision && (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div>
+                            <label htmlFor={"sale_before_fee_" + service.id} className="mb-1 block text-xs font-medium text-slate-600">Mensalidade actual (€) *</label>
+                            <input
+                              id={"sale_before_fee_" + service.id}
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              required
+                              value={choice.before_monthly_fee}
+                              onChange={(event) => setSaleServiceDecisions((current) => {
+                                const previous = current[service.id] ?? defaultSaleServiceDecision(service);
+                                return {
+                                  ...current,
+                                  [service.id]: {
+                                    ...previous,
+                                    before_monthly_fee: event.target.value,
+                                    after_monthly_fee: previous.decision === "keep_active" ? event.target.value : previous.after_monthly_fee,
+                                  },
+                                };
+                              })}
+                              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-600"
+                            />
+                          </div>
+                          {choice.decision === "renew" && <>
+                            <div>
+                              <label htmlFor={"sale_after_package_" + service.id} className="mb-1 block text-xs font-medium text-slate-600">Novo pacote *</label>
+                              <select
+                                id={"sale_after_package_" + service.id}
+                                required
+                                value={choice.after_package}
+                                onChange={(event) => setSaleServiceDecisions((current) => ({
+                                  ...current,
+                                  [service.id]: { ...(current[service.id] ?? defaultSaleServiceDecision(service)), after_package: event.target.value },
+                                }))}
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-600"
+                              >
+                                <option value="">Selecionar pacote</option>
+                                {SERVICE_PACKAGE_GROUPS.map((packageName) => <option key={packageName} value={packageName}>{packageName}</option>)}
+                                <option value="Outro">Outro (sem pontuação)</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label htmlFor={"sale_after_fee_" + service.id} className="mb-1 block text-xs font-medium text-slate-600">Nova mensalidade (€) *</label>
+                              <input
+                                id={"sale_after_fee_" + service.id}
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                required
+                                value={choice.after_monthly_fee}
+                                onChange={(event) => setSaleServiceDecisions((current) => ({
+                                  ...current,
+                                  [service.id]: { ...(current[service.id] ?? defaultSaleServiceDecision(service)), after_monthly_fee: event.target.value },
+                                }))}
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-600"
+                              />
+                            </div>
+                          </>}
+                        </div>
+                      )}
+                      {choice.decision === "keep_active" && <p className="text-xs text-slate-600">O serviço mantém-se activo com a mesma mensalidade e o mesmo pacote.</p>}
+                      {choice.decision === "cancel" && <p className="text-xs text-slate-600">O serviço fica inactivo. O cliente e o histórico permanecem no CRM.</p>}
+                      {choice.decision && <p className="text-xs font-semibold text-emerald-700">Pontos estimados: {points.toLocaleString("pt-PT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SP</p>}
+                    </div>
+                  );
+                }) : <p className="rounded-lg border border-dashed border-slate-300 bg-white p-3 text-xs text-slate-600">Este negócio não tem serviços associados. A venda será registada sem pontos de serviço.</p>}
+              </div>}
+              {stage === "sale" && deal.stage === "sale" && <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">Venda concluída. Os serviços e os pontos já estão registados.</p>}
               <div>
                 <label htmlFor={"deal_update_note_" + deal.id} className="mb-1.5 block text-xs font-semibold text-slate-600">Observação sobre esta alteração (opcional)</label>
                 <textarea id={"deal_update_note_" + deal.id} name="description" rows={2} maxLength={5000} placeholder="Contexto ou resultado desta alteração..."
@@ -461,13 +641,15 @@ export function DealDetailsDialog({ deal, initialStage, onClose, displayMode = "
               {updateState.success && <p role="status" className="text-xs text-emerald-700">{updateState.success}</p>}
               {lostState.error && <p role="alert" className="text-xs text-rose-700">{lostState.error}</p>}
               {lostState.success && <p role="status" className="text-xs text-emerald-700">{lostState.success}</p>}
+              {saleState.error && <p role="alert" className="text-xs text-rose-700">{saleState.error}</p>}
+              {saleState.success && <p role="status" className="text-xs text-emerald-700">{saleState.success}</p>}
               <div className="flex justify-end">
                 <button
                   type="submit"
-                  disabled={updatePending || lostPending || (stage === "lost" && deal.stage === "lost")}
+                  disabled={updatePending || lostPending || salePending || (stage === "lost" && deal.stage === "lost") || (stage === "sale" && deal.stage === "sale")}
                   className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60"
                 >
-                  {lostPending ? "A registar perda..." : updatePending ? "A guardar..." : stage === "lost" && deal.stage !== "lost" ? "Confirmar negócio perdido" : "Guardar alterações"}
+                  {lostPending ? "A registar perda..." : salePending ? "A registar venda..." : updatePending ? "A guardar..." : stage === "lost" && deal.stage !== "lost" ? "Confirmar negócio perdido" : stage === "sale" && deal.stage !== "sale" ? "Confirmar venda" : "Guardar alterações"}
                 </button>
               </div>
             </form>

@@ -22,10 +22,10 @@ async function getActiveUser() {
     .maybeSingle();
 
   if (profileError || !profile || !profile.is_active) {
-    return { supabase, userId: null, error: "A conta não está ativa ou não tem permissões." };
+    return { supabase, userId: null, role: null, error: "A conta não está ativa ou não tem permissões." };
   }
 
-  return { supabase, userId, error: null };
+  return { supabase, userId, role: profile.role as string, error: null };
 }
 
 type ManualServiceInput = {
@@ -211,6 +211,12 @@ function dealActivityError(message: string) {
   if (message.includes("Só podes editar")) return "Só podes editar observações e tentativas de contacto.";
   if (message.includes("já não existe") || message.includes("não pertence a este negócio")) return "Esta entrada já não existe ou não pertence a este negócio.";
   if (message.includes("destino de cada serviço") || message.includes("individualmente")) return "Tens de escolher o destino de todos os serviços associados.";
+  if (message.includes("decisão de cada serviço") || message.includes("decisoes dos servicos")) return "Tens de escolher o que acontece a cada serviço antes de concluir a venda.";
+  if (message.includes("mensalidade actual") || message.includes("mensalidade atual")) return "Indica uma mensalidade actual válida para cada serviço.";
+  if (message.includes("mensalidade nova") || message.includes("mensalidade final")) return "Indica a nova mensalidade para cada serviço renovado.";
+  if (message.includes("pacote futuro")) return "Seleciona o novo pacote para cada serviço renovado.";
+  if (message.includes("já está concluída")) return "Este negócio já tem uma venda registada.";
+  if (message.includes("Keep active")) return "Um serviço marcado para manter deve conservar a mesma mensalidade.";
   if (message.includes("fidelização") || message.includes("data de fim")) return "Indica uma data de fidelização futura para cada serviço que vais reciclar.";
   if (message.includes("já está marcado como perdido")) return "Este negócio já está marcado como perdido.";
   return "Não foi possível registar a atividade. Atualiza a página e tenta novamente.";
@@ -268,6 +274,9 @@ export async function recordDealActivityAction(
   if (description.length > 5000) return { error: "O texto não pode ultrapassar 5.000 caracteres." };
 
   if (action === "update") {
+    if (stage === "sale") {
+      return { error: "Para concluir a venda, escolhe o destino e as mensalidades de cada serviço." };
+    }
     if (!DEAL_STAGES.includes(stage as (typeof DEAL_STAGES)[number])) {
       return { error: "Seleciona uma fase válida do funil." };
     }
@@ -308,6 +317,121 @@ export async function recordDealActivityAction(
   if (action === "observation") return { success: "Observação registada com data e hora.", ...snapshot };
   if (action === "contact_attempt") return { success: "Tentativa de contacto registada.", ...snapshot };
   return { success: "Negócio atualizado e alteração registada.", ...snapshot };
+}
+
+export async function markDealSaleAction(
+  _previous: FormActionState,
+  formData: FormData
+): Promise<FormActionState> {
+  const context = await getActiveUser();
+  if (!context.userId) return { error: context.error ?? "Sessão inválida." };
+
+  const dealId = String(formData.get("deal_id") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  let serviceDecisions: unknown;
+
+  try {
+    serviceDecisions = JSON.parse(String(formData.get("sale_decisions") ?? "[]"));
+  } catch {
+    return { error: "As decisões de venda dos serviços são inválidas." };
+  }
+
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const moneyPattern = /^\d+(?:[.,]\d{1,2})?$/;
+  if (!uuidPattern.test(dealId)) return { error: "Negócio inválido." };
+  if (!Array.isArray(serviceDecisions) || serviceDecisions.length > 50) {
+    return { error: "A lista de decisões de venda é inválida." };
+  }
+  if (description.length > 5000) return { error: "A observação não pode ultrapassar 5.000 caracteres." };
+
+  const seen = new Set<string>();
+  for (const raw of serviceDecisions) {
+    if (!raw || typeof raw !== "object") return { error: "Uma das decisões de venda é inválida." };
+    const item = raw as Record<string, unknown>;
+    const serviceId = String(item.service_id ?? "");
+    const decision = String(item.decision ?? "");
+    const beforeFee = String(item.before_monthly_fee ?? "").trim();
+    const afterFee = String(item.after_monthly_fee ?? "").trim();
+    const afterPackage = String(item.after_package ?? "").trim();
+
+    if (!uuidPattern.test(serviceId) || seen.has(serviceId)) {
+      return { error: "Cada serviço deve ter uma decisão individual válida." };
+    }
+    seen.add(serviceId);
+    if (!["renew", "keep_active", "cancel"].includes(decision)) {
+      return { error: "Escolhe renovar, manter ou cancelar cada serviço." };
+    }
+    if (!moneyPattern.test(beforeFee)) {
+      return { error: "Indica a mensalidade actual de cada serviço." };
+    }
+    if (decision === "renew") {
+      if (!moneyPattern.test(afterFee)) return { error: "Indica a nova mensalidade de cada serviço renovado." };
+      if (!afterPackage || afterPackage.length > 120) return { error: "Seleciona o pacote futuro de cada serviço renovado." };
+    }
+    if (decision === "keep_active" && moneyPattern.test(afterFee) &&
+      Number(afterFee.replace(",", ".")) !== Number(beforeFee.replace(",", "."))) {
+      return { error: "Um serviço marcado para manter deve conservar a mesma mensalidade." };
+    }
+  }
+
+  const { error } = await context.supabase.rpc("mark_deal_sale_with_service_decisions", {
+    p_deal_id: dealId,
+    p_service_decisions: serviceDecisions,
+    p_description: description || null,
+  });
+
+  if (error) {
+    console.error("[CRM_MARK_DEAL_SALE]", { code: error.code, message: error.message });
+    return { error: dealActivityError(error.message ?? "") };
+  }
+
+  const snapshot = await loadDealActivitySnapshot(context.supabase, dealId);
+  revalidatePath("/pipeline");
+  revalidatePath("/pipeline/" + dealId);
+  revalidatePath("/dashboard");
+  revalidatePath("/results");
+  return { success: "Venda concluída. Os serviços e pontos foram registados.", ...snapshot };
+}
+
+export async function saveMonthlyGoalAction(
+  _previous: FormActionState,
+  formData: FormData
+): Promise<FormActionState> {
+  const context = await getActiveUser();
+  if (!context.userId) return { error: context.error ?? "Sessão inválida." };
+  if (context.role !== "admin") return { error: "Só um administrador pode definir objectivos mensais." };
+
+  const commercialId = String(formData.get("commercial_id") ?? "").trim();
+  const referenceMonth = String(formData.get("reference_month") ?? "").trim();
+  const targetRaw = String(formData.get("target_points") ?? "").trim().replace(",", ".");
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  if (!uuidPattern.test(commercialId)) return { error: "Seleciona um comercial válido." };
+  if (!/^\d{4}-(0[1-9]|1[0-2])-01$/.test(referenceMonth) || !validIsoDate(referenceMonth)) {
+    return { error: "Seleciona um mês válido." };
+  }
+  if (!/^\d+(?:\.\d{1,2})?$/.test(targetRaw)) return { error: "Indica um objectivo de pontos válido." };
+  const targetPoints = Number(targetRaw);
+  if (!Number.isFinite(targetPoints) || targetPoints < 0 || targetPoints > 1000000) {
+    return { error: "O objectivo tem de estar entre 0 e 1.000.000 pontos." };
+  }
+
+  const { error } = await context.supabase
+    .from("monthly_goals")
+    .upsert({
+      commercial_id: commercialId,
+      reference_month: referenceMonth,
+      target_points: targetPoints,
+    }, { onConflict: "commercial_id,reference_month" });
+
+  if (error) {
+    console.error("[CRM_SAVE_MONTHLY_GOAL]", { code: error.code, message: error.message });
+    return { error: "Não foi possível guardar o objectivo. Confirma as permissões e tenta novamente." };
+  }
+
+  revalidatePath("/results");
+  revalidatePath("/dashboard");
+  return { success: "Objectivo mensal guardado." };
 }
 
 export async function markDealLostAction(
@@ -475,6 +599,7 @@ export async function updateDealAction(_previous: FormActionState, formData: For
   if (!DEAL_STAGES.includes(stage as (typeof DEAL_STAGES)[number])) {
     return { error: "Seleciona uma fase válida do funil." };
   }
+  if (stage === "sale") return { error: "Para concluir a venda, regista os serviços no detalhe do negócio." };
   if (["scheduled", "future_contact"].includes(stage) &&
     (!nextContactDate || !validIsoDate(nextContactDate))) {
     return { error: "Indica a data em que devemos voltar a contactar o cliente." };

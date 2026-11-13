@@ -112,11 +112,11 @@ export default async function DashboardPage() {
             <h3 className="mt-3 font-semibold text-slate-900">Importar clientes</h3>
             <p className="mt-1 text-sm leading-6 text-slate-500">Importa as folhas de clientes, MEO, cartões móveis, GCP e administradores.</p>
           </Link>
-          <div className="rounded-xl border border-dashed border-slate-300 p-5">
-            <CalendarDays size={20} className="text-slate-400" />
-            <h3 className="mt-3 font-semibold text-slate-700">Objetivos comerciais</h3>
-            <p className="mt-1 text-sm leading-6 text-slate-500">Próxima fase: objetivos mensais, pontos e evolução de resultados.</p>
-          </div>
+          <Link href="/results" className="rounded-xl border border-slate-200 p-5 transition hover:border-blue-300 hover:bg-blue-50/40">
+            <TrendingUp size={20} className="text-blue-700" />
+            <h3 className="mt-3 font-semibold text-slate-900">Resultados e objectivos</h3>
+            <p className="mt-1 text-sm leading-6 text-slate-500">Acompanha os pontos das vendas, objectivos mensais e evolução por comercial.</p>
+          </Link>
         </div>
       </section>
     </main>

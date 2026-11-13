@@ -37,7 +37,7 @@ export type PipelineDeal = {
   notes: string | null;
   eligibility_month: string | null;
   client: { id: string; full_name: string; nif: string; phone: string | null; email: string | null; phone_numbers: string[]; emails: string[] } | null;
-  services: { id: string; service_number: string; service_type: string; package_name: string | null; loyalty_end_date: string | null; source_data: unknown }[];
+  services: { id: string; service_number: string; service_type: string; package_name: string | null; current_monthly_fee: number | string | null; loyalty_end_date: string | null; source_data: unknown }[];
   activities: PipelineActivity[];
 };
 
