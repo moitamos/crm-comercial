@@ -1,67 +1,129 @@
-# CRM ONE — faturas por serviço no funil
+# CRM ONE → CRM Comercial: importar Invoice pela consola F12
 
-## Implementado nesta branch
+Esta integração funciona com dois scripts JavaScript na consola do Edge/Citrix.
+NÃO utiliza Tampermonkey, extensões nem sessões ou credenciais MEO no backend.
+Reaproveita as verificações da integração WeCall antigo, mas mantém canal
+de mensagens, estado local, URL, token e armazenamento independentes.
 
-Os detalhes do negócio mostram a secção Faturas dentro de cada cartão de
-Serviço associado, tanto no modal do funil como na página dedicada.
+## Implementado
 
-A consulta usa uma única chamada GET a /api/deals/[id]/invoices por negócio.
-Os PDFs são abertos por GET /api/invoices/[id]/document, que confirma a sessão
-e gera um link privado de 60 segundos para o ficheiro no Supabase Storage.
-É possível ver o PDF e descarregá-lo. Quando há várias faturas, aparece a
-mais recente primeiro e as restantes ficam numa secção expansível.
+- Página de administrador **Faturas CRM ONE** (/invoice-import) para criar
+  autorização temporária de 30, 60 ou 120 minutos, copiar e revogar.
+- API POST /api/crm-one/prepare para validar NIF, Nº Serviço, NCC, Invoice,
+  data, tamanho e SHA-256 esperado. Rejeita duplicados e conflitos.
+- Envio direto do PDF para a bucket privada Supabase crm-invoices com
+  URL de upload assinado: evita o limite de 4,5 MB da Vercel.
+- API POST /api/crm-one/finish que lê o objeto de storage no servidor,
+  valida assinatura %PDF-, tamanho e SHA-256 e grava a ligação ao serviço
+  na tabela client_invoices.
+- Visualização em Funil → Negócio → Serviços associados → Faturas.
+- Importação idempotente: o mesmo documento não é duplicado.
+- Recuperação de upload interrompido com o mesmo token e o mesmo hash.
+- Só administradores ativos emitem autorizações; a API confirma a role
+  e o estado da conta a cada pedido.
 
-A migração 20261113170000_client_invoices_by_service.sql cria:
-- public.client_invoices, com associação obrigatória a cliente e serviço;
-- UNIQUE por NIF + número de serviço + número de documento;
-- validações de NIF, número de serviço e caminho de armazenamento;
-- bucket privada crm-invoices (máximo 15 MB, apenas PDF);
-- RLS para que apenas o responsável atual pelo cliente e os administradores
-  possam consultar os metadados e objetos, segundo as permissões existentes.
+## Publicação pelo proprietário
 
-## Preparar o ambiente
+1. Rever o PR e confirmar a autorização da organização para consultar,
+   transferir e armazenar faturas do CRM MEO neste portal.
+2. Fazer backup da base de dados. Aplicar primeiro a migração anterior
+   supabase/migrations/20261113170000_client_invoices_by_service.sql,
+   se ainda não aplicada. Depois aplicar a NOVA migração
+   supabase/migrations/20261113180000_crm_one_console_import.sql.
+3. Na Vercel → Projeto crm-comercial → Settings → Environment Variables,
+   criar a variável SUPABASE_SERVICE_ROLE_KEY no ambiente Production,
+   com a chave service_role do projeto Supabase correspondente.
+   NUNCA prefixar com NEXT_PUBLIC_ nem colocar em JavaScript do browser,
+   na consola, em ficheiros versionados ou num chat.
+   A chave tem acesso privilegiado a todas as tabelas e objetos.
+4. Validar e fazer merge do PR; confirmar deployment e abrir /invoice-import
+   com uma conta de administrador.
+5. Verificar as tabelas client_invoices, crm_one_import_tokens e
+   crm_one_import_uploads e bucket privada crm-invoices.
+6. Confirmar que o domínio da aplicação é
+   https://crm-comercial-rust-seven.vercel.app e o projeto Supabase
+   é o documentado no worker. Se mudarem, atualizar ambos os scripts
+   e os destinos permitidos, sem permitir URLs arbitrários.
+7. Não aplicar duas vezes manualmente migrações que também estão pendentes
+   no Supabase CLI sem reconciliar o histórico.
 
-Aplicar a migração no projeto Supabase do CRM Comercial, após cópia de
-segurança, e verificar as políticas RLS antes de publicar.
+## Utilização no Edge / Citrix, exclusivamente pela consola
 
-Nesta fase NÃO foi desenvolvido o script de extração do CRM ONE nem
-um endpoint para carregar faturas. A interface irá mostrar Sem faturas
-associadas a este serviço até existirem PDFs e metadados válidos.
+1. No CRM Comercial, o administrador abre **Faturas CRM ONE**, gera
+   um token e copia-o. Não o guardar em disco.
+2. Abre a página principal do CRM ONE/Siebel autenticado, em
+   sbl8pwebvip.telecom.pt, e executa na consola F12 o conteúdo de
+   docs/crm-one-console-main.js.
+3. A partir do CRM ONE abre a janela Invoice, em oso.telecom.pt,
+   e executa nessa janela o conteúdo de docs/crm-one-console-popup.js
+   pela consola F12 ou Snippets.
+4. No gestor principal cola o token e uma lista de Nº Serviço ou
+   NIF;Nº Serviço, um por linha. Exemplo FICTÍCIO:
+   501234567;1704000000
+5. Testa primeiro um único serviço pelos botões do painel.
+   O modo automático só começa quando o utilizador clica explicitamente
+   em **Iniciar lote automático**.
+6. Confirma a Invoice no detalhe do serviço no funil. Testa depois dois
+   serviços e só então aumenta o lote.
 
-## Contrato da futura importação CRM ONE
+Mantêm-se: Nº Serviço + estado AC único, NIF validado na ficha readonly
+do Siebel, NCC da conta e da Invoice iguais, primeira linha do tipo
+Invoice, assinatura %PDF-, máximo 15 MB, fila sequencial, pausa de
+10–15 segundos e bloqueio quando o Citrix ignora o Enter sintético.
 
-O backend deverá receber e validar NIF, número de serviço, NCC, número da
-Invoice, data e PDF. Deve resolver client_id e service_id pelo NIF e
-número do serviço existentes na base de dados, nunca confiar nos IDs enviados
-pelo script. Em caso de conflito, rejeitar e registar a ocorrência.
+O progresso, sem tokens nem PDFs, é mantido em sessionStorage apenas
+no separador Siebel. O token fica só na memória do script e nunca é
+guardado no storage. É possível exportar o CSV de progresso.
 
-Para criar uma linha de client_invoices usar:
-- client_id, service_id, nif, service_number, ncc, document_number, issued_at;
-- storage_path formado por client_id/service_id/invoice_id.pdf;
-- file_size_bytes, opcional sha256, created_by e source (crm_one).
+## Segurança
 
-O script precisará de tokens temporários com escopo de importação, emitidos
-apenas para utilizadores autorizados, e de CORS restrito à janela de faturas.
-Nunca colocar chaves de serviço do Supabase nem segredos no JavaScript do
-browser, na consola, no Tampermonkey ou no repositório.
+- Token aleatório de 32 bytes; servidor conserva apenas SHA-256.
+- Endpoint de token exige sessão admin e Origin da mesma aplicação.
+- Endpoints de importação só aceitam Origin https://oso.telecom.pt
+  e Bearer token válido. CORS sozinho não substitui autenticação.
+- Signed upload URL fixa um único caminho; a tabela client_invoices
+  só é preenchida depois de validar os bytes no backend.
+- API resolve e valida NIF e Nº Serviço na base de dados; não aceita
+  IDs internos enviados pelo script. Compara também NCC específico do
+  serviço se estiver disponível nos dados de origem PIU.
+- Duplicados por NIF + Nº Serviço + Nº Documento são impedidos na BD.
+- Reservas duram 15 minutos; o Supabase determina a validade dos URLs
+  assinados (normalmente até 2 horas). Leitura de PDFs mantém RLS.
+- Não repetir automaticamente envios incertos. Recuperar a mesma reserva
+  após verificar o resultado.
+- Não confundir os scripts do WeCall antigo com estes do CRM Comercial.
+- Só utilizar as faturas com autorização expressa de consulta e partilha,
+  respeitando regras de proteção de dados e retenção.
 
-Para PDFs maiores que o limite de pedido das Vercel Functions, usar
-autorização de upload direto para a bucket privada, conferindo o objeto no
-servidor antes de guardar a linha em client_invoices. Não expor a bucket
-publicamente. Tratar falhas parciais sem duplicar documentos.
+## Validação obrigatória antes de dados reais
 
-Não são concedidas permissões de INSERT/UPDATE/DELETE aos utilizadores
-autenticados nesta fase. A futura API deverá executar essas operações
-no servidor após validação rigorosa de acesso e correspondência de dados.
+1. Emissão e revogação de token; um comercial não consegue emitir.
+2. Origem indevida, sem token ou token expirado dão 403/401.
+3. NIF inexistente, serviço de outro NIF e NCC divergente bloqueiam.
+4. HTML fingindo ser PDF, bytes alterados, tamanho e hash inválidos bloqueiam.
+5. Invoice válida é visível no negócio, incluindo botão Ver PDF.
+6. Mesmo documento duas vezes não cria duplicado.
+7. Falha entre PUT Supabase e confirmação permite recuperação.
+8. Comercial de outra carteira não consegue abrir os PDFs.
+9. Teste real com um serviço no Edge/Citrix; verificar CORS da origem
+   oso.telecom.pt para o Supabase Storage.
+10. Executar typecheck, lint, build e testes dos scripts.
 
-## Validação operacional a executar
+Reservas abandonadas podem criar objetos privados não referenciados.
+A API limpa objetos quando encontra uma reserva expirada durante nova
+tentativa. Para grandes volumes é recomendável implementar limpeza
+periódica, política de retenção e auditoria de acessos.
 
-1. Abrir um negócio sem PDFs: indicação discreta em cada serviço.
-2. Inserir uma Invoice de teste válida por fluxo autorizado e consultar PDF.
-3. Confirmar agrupamento correto quando existem vários serviços.
-4. Confirmar que utilizador sem acesso ao cliente não pode abrir o documento.
-5. Confirmar respostas para sessão expirada, documento ausente e erro de rede.
-6. Validar funcionamento no modal e na opção Abrir em página.
+## Ficheiros
 
-Antes de importar dados reais do CRM MEO, confirmar autorização da
-organização e do titular dos dados, retenção, auditoria e permissões de acesso.
+- src/app/(crm)/invoice-import/page.tsx
+- src/components/crm/import-token-manager.tsx
+- src/app/api/crm-one/token/route.ts
+- src/app/api/crm-one/prepare/route.ts
+- src/app/api/crm-one/finish/route.ts
+- src/lib/crm-one/import-auth.ts
+- supabase/migrations/20261113180000_crm_one_console_import.sql
+- docs/crm-one-console-main.js
+- docs/crm-one-console-popup.js
+
+O código do WeCall antigo não foi alterado.
