@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, CheckCircle2, CircleDollarSign, Target, TrendingUp, Trophy, Users } from "lucide-react";
+import { CalendarDays, CircleDollarSign, Target, TrendingUp, Trophy, Users } from "lucide-react";
 import { MonthlyGoalForm } from "@/components/crm/monthly-goal-form";
 import { createClient } from "@/lib/supabase/server";
 
@@ -161,7 +161,7 @@ export default async function ResultsPage({ searchParams }: Props) {
         <MetricCard title="Pontos gerados" value={pointsLabel(totalPoints) + " SP"} note="Soma dos pontos registados no mês" icon={Trophy} />
         <MetricCard title="Objectivo total" value={pointsLabel(totalTarget) + " SP"} note="Soma dos objectivos definidos" icon={Target} />
         <MetricCard title="Progresso do objectivo" value={totalTarget > 0 ? progress.toLocaleString("pt-PT", { maximumFractionDigits: 1 }) + "%" : "Sem objectivo"} note={totalTarget > 0 ? pointsLabel(totalPoints) + " de " + pointsLabel(totalTarget) + " SP" : "Define um objectivo para acompanhar o progresso"} icon={TrendingUp} />
-        <MetricCard title="Vendas concluídas" value={totalSales.toLocaleString("pt-PT")} note="Negócios concluídos em " + monthLabel(referenceMonth) icon={CircleDollarSign} />
+        <MetricCard title="Vendas concluídas" value={totalSales.toLocaleString("pt-PT")} note={"Negócios concluídos em " + monthLabel(referenceMonth)} icon={CircleDollarSign} />
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
