@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Search, UserPlus, Upload, Users, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight } from "lucide-react";
 import { ClientDetailsButton } from "@/components/crm/client-details-button";
 import { ClientListFilters } from "@/components/crm/client-list-filters";
+import { ExportClientsButton } from "@/components/crm/export-clients-button";
 import { createClient } from "@/lib/supabase/server";
 import { getServicePackageFamily, getServicePackageLabel, SERVICE_PACKAGE_GROUPS } from "@/lib/crm/packages";
 
@@ -200,6 +201,7 @@ export default async function ClientsPage({ searchParams }: Props) {
           <p className="mt-2 text-sm text-slate-500">{totalCount.toLocaleString("pt-PT")} clientes encontrados nesta pesquisa</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <ExportClientsButton />
           <Link href="/import" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
             <Upload size={16} /> Importar ficheiro
           </Link>

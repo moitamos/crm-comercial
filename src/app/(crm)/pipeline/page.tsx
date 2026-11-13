@@ -3,6 +3,7 @@ import { BriefcaseBusiness, CalendarClock, Clock3, Search, TrendingUp, Users } f
 import { createClient } from "@/lib/supabase/server";
 import { PipelineBoard, type PipelineActivity, type PipelineDeal } from "@/components/crm/pipeline-board";
 import { PipelineMonthControls } from "@/components/crm/pipeline-month-controls";
+import { ExportPipelineButton } from "@/components/crm/export-pipeline-button";
 
 type Props = { searchParams: Promise<{ q?: string; sort?: string; month?: string }> };
 type DealRow = {
@@ -320,6 +321,21 @@ export default async function PipelinePage({ searchParams }: Props) {
   const candidateCount = selectedMonth === "unassigned"
     ? 0
     : candidatesByMonth.get(selectedMonth)?.size ?? 0;
+  const exportMonthCounts = new Map<string, number>();
+  for (const deal of allDeals) {
+    if (!deal.eligibility_month) continue;
+    exportMonthCounts.set(deal.eligibility_month, (exportMonthCounts.get(deal.eligibility_month) ?? 0) + 1);
+  }
+  const exportMonths = Array.from(exportMonthCounts.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([value, count]) => ({
+      value,
+      count,
+      label: new Date(value + "T12:00:00.000Z").toLocaleDateString("pt-PT", {
+        month: "long", year: "numeric", timeZone: "Europe/Lisbon",
+      }),
+    }));
+  const unassignedDealsCount = allDeals.filter((deal) => !deal.eligibility_month).length;
 
   const queryError = dealsResult.error || clientsResult.error || dealServicesResult.error
     || interactionsResult.error || clientAdminContactsResult.error || servicesResult.error || candidateServicesResult.error;
@@ -331,9 +347,12 @@ export default async function PipelinePage({ searchParams }: Props) {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Funil de vendas</h1>
         </div>
-        <Link href="/clients" className="inline-flex items-center gap-2 self-start rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:self-auto">
-          <Users size={16} /> Consultar clientes
-        </Link>
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          <ExportPipelineButton months={exportMonths} hasUnassigned={unassignedDealsCount > 0} unassignedCount={unassignedDealsCount} />
+          <Link href="/clients" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            <Users size={16} /> Consultar clientes
+          </Link>
+        </div>
       </div>
 
       <PipelineMonthControls
