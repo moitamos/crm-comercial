@@ -37,7 +37,13 @@ export function externalJson(data: unknown, status = 200) {
 }
 export function externalOptions(request: Request) {
   if (request.headers.get("origin") !== CRM_ONE_ORIGIN) return privateJson({ error: "Origem não permitida." }, 403);
-  return externalJson(null, 204);
+  const response = new NextResponse(null, { status: 204 });
+  response.headers.set("Access-Control-Allow-Origin", CRM_ONE_ORIGIN);
+  response.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  response.headers.set("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  response.headers.set("Access-Control-Max-Age", "300");
+  response.headers.set("Vary", "Origin");
+  return response;
 }
 export function externalOriginAllowed(request: Request) {
   return request.headers.get("origin") === CRM_ONE_ORIGIN;

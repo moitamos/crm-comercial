@@ -29,7 +29,7 @@ export default async function CrmLayout({
 
   return (
     <div className="min-h-screen lg:flex">
-      <CrmSidebar />
+      <CrmSidebar isAdmin={profile.role === "admin"} />
       <div className="min-w-0 flex-1 lg:pl-64">
         <header className="flex min-h-14 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2 sm:px-7">
           <span className="flex items-center gap-2 text-xs text-slate-500">

@@ -10,6 +10,7 @@ import {
   BriefcaseBusiness,
   CalendarClock,
   TrendingUp,
+  FileDown,
 } from "lucide-react";
 
 const links = [
@@ -21,7 +22,7 @@ const links = [
   { href: "/results", label: "Resultados", icon: TrendingUp },
 ];
 
-export function CrmSidebar() {
+export function CrmSidebar({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname();
 
   return (
@@ -37,7 +38,7 @@ export function CrmSidebar() {
       </Link>
 
       <nav aria-label="Navegação principal" className="flex gap-1 overflow-x-auto px-3 pb-3 lg:flex-col lg:gap-1 lg:overflow-visible lg:px-4 lg:pt-7">
-        {links.map((item) => {
+        {[...links, ...(isAdmin ? [{ href: "/invoice-import", label: "Faturas CRM ONE", icon: FileDown }] : [])].map((item) => {
           const Icon = item.icon;
           const active = pathname === item.href || pathname.startsWith(item.href + "/");
           const disabled = ["/agenda"].includes(item.href);
