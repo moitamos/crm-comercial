@@ -717,7 +717,7 @@
       scheduleAutoNext(waitMs);
       status('Falha de rede em '+failedService+'; serviço marcado para revisão. '+
         'A seguir em '+Math.ceil(waitMs/1000)+' s. '+
-        (event.data.phase==='wecall-upload'
+        (event.data.phase==='crmcom-upload'
           ? 'Envio ao CRM Comercial sem confirmação: verifica antes de repetir.'
           : 'Falha ao descarregar PDF; nenhum envio efetuado.'));
     }
@@ -789,7 +789,7 @@
       persist();render();selectNext();
     }
     if (action==='export') {
-      const csv=[['NIF','NumeroServico','NCC','Estado','Documento','Data','IDCRM Comercial','Tentativas','Nota'],
+      const csv=[['NIF','NumeroServico','NCC','Estado','Documento','Data','ID CRM Comercial','Tentativas','Nota'],
         ...tasks.map(t=>[t.nif,t.service,t.ncc,t.state,t.doc,t.date,t.invoiceId,t.attempts,t.note])]
         .map(row=>row.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';')).join('\r\n');
       const url=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}));
