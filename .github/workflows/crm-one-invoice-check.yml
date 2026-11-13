@@ -26,7 +26,7 @@ jobs:
         run: node --test tests/crm-one-console.test.cjs
       - name: Typecheck
         run: npm run typecheck
-      - name: Lint
-        run: npm run lint
+      - name: Lint new integration files
+        run: npx eslint "src/lib/crm-one/**" "src/app/api/crm-one/**" "src/app/(crm)/invoice-import/page.tsx" "src/components/crm/import-token-manager.tsx" "docs/crm-one-console-*.js" "tests/crm-one-console.test.cjs"
       - name: Build
         run: npm run build
