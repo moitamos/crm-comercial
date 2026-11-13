@@ -386,7 +386,7 @@ export function DealDetailsDialog({ deal, initialStage, onClose, displayMode = "
             </section>
           )}
 
-          <DealServicesInvoices dealId={deal.id} services={deal.services.map((service) => ({
+          <DealServicesInvoices key={deal.id} dealId={deal.id} services={deal.services.map((service) => ({
             id: service.id,
             service_number: service.service_number,
             label: servicePackage(service),
