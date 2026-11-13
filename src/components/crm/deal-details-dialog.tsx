@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  CalendarClock,
   CheckCircle2,
   Circle,
   Clock3,
@@ -25,6 +24,7 @@ import {
   recordDealActivityAction,
 } from "@/lib/crm/actions";
 import { getServicePackageFamily, getServicePackageLabel, SERVICE_PACKAGE_GROUPS } from "@/lib/crm/packages";
+import { DealServicesInvoices } from "@/components/crm/deal-services-invoices";
 import type { DealActivityStateItem, DealSnapshotState, FormActionState } from "@/lib/crm/types";
 
 const STAGES = [
@@ -386,16 +386,12 @@ export function DealDetailsDialog({ deal, initialStage, onClose, displayMode = "
             </section>
           )}
 
-          <section>
-            <div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-semibold text-slate-900">Serviços associados</h3><span className="text-xs text-slate-500">{deal.services.length} serviços</span></div>
-            {deal.services.length ? <div className="grid gap-2 sm:grid-cols-2">
-              {deal.services.map((service) => <div key={service.id} className="rounded-xl border border-slate-200 p-3">
-                <p className="text-sm font-semibold text-slate-800">{servicePackage(service)}</p>
-                <p className="mt-0.5 text-xs text-slate-500">N.º {service.service_number}</p>
-                <p className="mt-2 text-xs text-slate-600"><CalendarClock size={13} className="mr-1 inline" />Fidelização até <strong>{dateLabel(service.loyalty_end_date)}</strong></p>
-              </div>)}
-            </div> : <p className="rounded-xl border border-dashed p-3 text-sm text-slate-500">Sem serviços associados.</p>}
-          </section>
+          <DealServicesInvoices key={deal.id} dealId={deal.id} services={deal.services.map((service) => ({
+            id: service.id,
+            service_number: service.service_number,
+            label: servicePackage(service),
+            loyalty_end_date: service.loyalty_end_date,
+          }))} />
 
           <section className="rounded-xl border border-slate-200 p-4">
             <div className="mb-3 flex items-center gap-2"><CheckCircle2 size={16} className="text-blue-700" /><h3 className="text-sm font-semibold text-slate-900">Fase do negócio</h3></div>
