@@ -433,9 +433,10 @@ export function DealDetailsDialog({ deal, initialStage, onClose, displayMode = "
                   <button
                     key={item.value}
                     type="button"
+                    disabled={deal.stage === "sale"}
                     aria-pressed={stage === item.value}
                     onClick={() => setStage(item.value)}
-                    className={"rounded-lg border px-2.5 py-2 text-xs font-semibold transition focus:outline-none focus:ring-2 focus:ring-blue-300 " +
+                    className={"rounded-lg border px-2.5 py-2 text-xs font-semibold transition focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:cursor-not-allowed disabled:opacity-50 " +
                       (stage === item.value ? item.active : item.style)}
                   >
                     {item.label}
