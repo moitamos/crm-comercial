@@ -1,0 +1,39 @@
+name: CRM ONE invoice integration checks
+
+on:
+  pull_request:
+    paths:
+      - "src/app/api/crm-one/**"
+      - "src/lib/crm-one/**"
+      - "src/app/(crm)/invoice-import/**"
+      - "src/components/crm/import-token-manager.tsx"
+      - "docs/crm-one-console-*.js"
+      - "tests/crm-one-console.test.cjs"
+      - ".github/workflows/crm-one-invoice-check.yml"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Verify console scripts
+        run: node --test tests/crm-one-console.test.cjs
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint new integration files
+        run: npx eslint "src/lib/crm-one/**" "src/app/api/crm-one/**" "src/app/(crm)/invoice-import/page.tsx" "src/components/crm/import-token-manager.tsx" "docs/crm-one-console-*.js" "tests/crm-one-console.test.cjs"
+      - name: Build (when test Supabase environment is provided)
+        if: env.NEXT_PUBLIC_SUPABASE_URL != '' && env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY != ''
+        run: npm run build
+      - name: Explain skipped build
+        if: env.NEXT_PUBLIC_SUPABASE_URL == '' || env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY == ''
+        run: echo 'Build requires Supabase credentials in CI; Vercel performs its own deployment build.'
