@@ -7,6 +7,7 @@ import {
   CircleDollarSign,
   Layers,
   Smartphone,
+  TrendingUp,
   Users,
   Wifi,
 } from "lucide-react";
