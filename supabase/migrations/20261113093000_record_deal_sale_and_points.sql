@@ -301,7 +301,7 @@ begin
       insert into public.loyalty_history (
         service_id, sale_service_id, start_date, end_date, source, recorded_by
       ) values (
-        v_service.service_id, v_sale_service_id, v_local_date, v_new_end_date, 'crm_sale', v_user_id
+        v_service.service_id, v_sale_service_id, v_local_date, v_new_end_date, 'crm', v_user_id
       );
     end if;
 
