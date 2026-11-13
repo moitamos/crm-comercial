@@ -60,7 +60,11 @@ export async function checkConsoleImportGrant(request: Request): Promise<
   const token = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(header)?.[1];
   if (!token || !TOKEN_RE.test(token)) return { error: externalJson({ error: "Autorização em falta." }, 401) };
 
-  const admin = getImportAdminClient();
+  let admin: AdminDb;
+  try { admin = getImportAdminClient(); }
+  catch {
+    return { error: externalJson({ error: "Integração de faturas ainda não configurada no servidor." }, 503) };
+  }
   const now = new Date().toISOString();
   const { data: grant, error } = await admin.from("crm_one_import_tokens")
     .select("id,created_by,expires_at,revoked_at")

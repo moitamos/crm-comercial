@@ -14,7 +14,9 @@ export async function POST(request: Request) {
     return privateJson({ error: "Duração permitida: 30, 60 ou 120 minutos." }, 422);
   }
 
-  const admin = getImportAdminClient();
+  let admin: ReturnType<typeof getImportAdminClient>;
+  try { admin = getImportAdminClient(); }
+  catch { return privateJson({ error: "Configura SUPABASE_SERVICE_ROLE_KEY na Vercel antes de gerar autorizações." }, 503); }
   const expires = new Date(Date.now() + Number(requested) * 60000).toISOString();
   const token = createImportToken();
   // A new token revokes the previous grants for the same admin.
@@ -35,7 +37,9 @@ export async function DELETE(request: Request) {
   if (!sameSiteRequest(request)) return privateJson({ error: "Origem não autorizada." }, 403);
   const actor = await getPortalAdmin();
   if (!actor) return privateJson({ error: "Sem permissão." }, 403);
-  const admin = getImportAdminClient();
+  let admin: ReturnType<typeof getImportAdminClient>;
+  try { admin = getImportAdminClient(); }
+  catch { return privateJson({ error: "Integração ainda não configurada." }, 503); }
   const { error } = await admin.from("crm_one_import_tokens")
     .update({ revoked_at: new Date().toISOString() })
     .eq("created_by", actor.userId).is("revoked_at", null);
