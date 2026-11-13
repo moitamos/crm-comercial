@@ -34,7 +34,7 @@ function InvoiceItem({ invoice }: { invoice: Invoice }) {
           <FileText size={13} className="shrink-0 text-blue-700" />
           Invoice {invoice.document_number}
         </p>
-        <p className="mt-0.5 text-[11px] text-slate-500">{dateLabel(invoice.issued_at)}</p>
+        <p className="mt-0.5 text-[11px] text-slate-500">Faturação: {new Date(invoice.issued_at + "T12:00:00Z").toLocaleDateString("pt-PT", { month: "long", year: "numeric", timeZone: "UTC" })} · {dateLabel(invoice.issued_at)}</p>
       </div>
       <div className="flex flex-wrap gap-1.5">
         <a href={base} target="_blank" rel="noopener noreferrer"
