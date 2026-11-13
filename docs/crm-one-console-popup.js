@@ -169,10 +169,13 @@
     } catch(error) {
       throw networkFetchError(error,'crmcom-upload') || error;
     } finally {clearTimeout(deadline);}
-    if(!uploaded.ok) {
+    if(!uploaded.ok && !(prepared.recovered && [400,409].includes(uploaded.status))) {
       // Do not retry an ambiguous upload automatically; the object might exist.
       throw new Error('Supabase recusou o PDF (HTTP '+uploaded.status+'). Verifica o estado no CRM antes de repetir.');
     }
+    // A signed PUT can fail with "Asset already exists" if an earlier upload
+    // succeeded but its confirmation was interrupted. Finalize only the
+    // same recovered reservation; the backend verifies its SHA-256 and size.
     const finalized=await send(job.destination+'/api/crm-one/finish',{
       upload_id:prepared.upload_id
     },'confirmar');
