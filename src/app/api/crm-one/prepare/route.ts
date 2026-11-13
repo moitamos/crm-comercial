@@ -18,15 +18,18 @@ const hashPattern = /^[a-f0-9]{64}$/;
 
 export async function POST(request: Request) {
   const auth = await checkConsoleImportGrant(request);
-  if ("error" in auth) return auth.error;
+  if (auth.error) return auth.error;
   const { admin, grant } = auth;
   let body: PrepareBody;
   try { body = await request.json() as PrepareBody; }
   catch { return externalJson({ error: "Pedido JSON inválido." }, 400); }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return externalJson({ error: "Pedido inválido." }, 400);
+  }
   const { nif, numero_servico: serviceNumber, ncc, numero_documento: doc, data_documento: date, tamanho: bytes, sha256 } = body;
   if (!validNif(nif) || !validService(serviceNumber) || !validNcc(ncc) ||
       !validDocument(doc) || !validDate(date) ||
-      !Number.isInteger(bytes) || Number(bytes) < 100 || Number(bytes) > CRM_ONE_MAX_BYTES ||
+      typeof bytes !== "number" || !Number.isInteger(bytes) || bytes < 100 || bytes > CRM_ONE_MAX_BYTES ||
       typeof sha256 !== "string" || !hashPattern.test(sha256)) {
     return externalJson({ error: "Identificadores, data ou ficheiro inválidos." }, 422);
   }

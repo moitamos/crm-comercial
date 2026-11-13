@@ -51,7 +51,10 @@ export function externalOriginAllowed(request: Request) {
 export function sameSiteRequest(request: Request) {
   return request.headers.get("origin") === new URL(request.url).origin;
 }
-export async function checkConsoleImportGrant(request: Request) {
+export async function checkConsoleImportGrant(request: Request): Promise<
+  | { error: NextResponse; admin?: never; grant?: never }
+  | { error?: never; admin: AdminDb; grant: { id: string; created_by: string; expires_at: string; revoked_at: string | null } }
+> {
   if (!externalOriginAllowed(request)) return { error: externalJson({ error: "Origem não permitida." }, 403) };
   const header = request.headers.get("authorization") ?? "";
   const token = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(header)?.[1];

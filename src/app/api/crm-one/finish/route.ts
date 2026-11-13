@@ -8,7 +8,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function POST(request: Request) {
   const auth = await checkConsoleImportGrant(request);
-  if ("error" in auth) return auth.error;
+  if (auth.error) return auth.error;
   const { admin, grant } = auth;
   let body: unknown;
   try { body = await request.json(); } catch { return externalJson({ error: "Pedido JSON inválido." }, 400); }
