@@ -9,6 +9,8 @@ on:
       - "src/components/crm/import-token-manager.tsx"
       - "docs/crm-one-console-*.js"
       - "tests/crm-one-console.test.cjs"
+      - "src/app/api/invoices/**"
+      - "tests/invoice-document-uuid.test.mjs"
       - ".github/workflows/crm-one-invoice-check.yml"
   workflow_dispatch:
 
@@ -26,11 +28,11 @@ jobs:
       - name: Install
         run: npm install --no-audit --no-fund
       - name: Verify console scripts
-        run: node --test tests/crm-one-console.test.cjs
+        run: node --test tests/crm-one-console.test.cjs tests/invoice-document-uuid.test.mjs
       - name: Typecheck
         run: npm run typecheck
       - name: Lint new integration files
-        run: npx eslint "src/lib/crm-one/**" "src/app/api/crm-one/**" "src/app/(crm)/invoice-import/page.tsx" "src/components/crm/import-token-manager.tsx" "docs/crm-one-console-*.js" "tests/crm-one-console.test.cjs"
+        run: npx eslint "src/lib/crm-one/**" "src/app/api/crm-one/**" "src/app/api/invoices/**" "src/app/(crm)/invoice-import/page.tsx" "src/components/crm/import-token-manager.tsx" "docs/crm-one-console-*.js" "tests/crm-one-console.test.cjs" "tests/invoice-document-uuid.test.mjs"
       - name: Build (when test Supabase environment is provided)
         if: env.NEXT_PUBLIC_SUPABASE_URL != '' && env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY != ''
         run: npm run build
